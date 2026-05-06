@@ -1,0 +1,16 @@
+{
+  "name": "fitness-saas",
+  "private": true,
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "db:push": "turbo run db:push --filter=@fitness/database",
+    "db:studio": "turbo run db:studio --filter=@fitness/database",
+    "db:generate": "turbo run db:generate --filter=@fitness/database"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
+  }
+}
