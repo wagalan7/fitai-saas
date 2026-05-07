@@ -22,7 +22,7 @@ async function bootstrap() {
     credentials: true,
   });
 
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', { exclude: ['health'] });
 
   const port = process.env.PORT || 4000;
   await app.listen(port, '0.0.0.0');
