@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp } from 'lucide-react';
+import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play } from 'lucide-react';
 
 const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -140,8 +140,20 @@ export default function WorkoutsPage() {
                             {ex.order}
                           </span>
                           <div className="flex-1">
-                            <p className="font-semibold text-gray-900">{ex.name}</p>
-                            <div className="flex gap-4 mt-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-semibold text-gray-900">{ex.name}</p>
+                              <a
+                                href={`https://www.youtube.com/results?search_query=${encodeURIComponent(ex.name + ' como fazer execução')}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-full transition-colors"
+                                title={`Ver como fazer: ${ex.name}`}
+                              >
+                                <Play size={9} fill="currentColor" />
+                                Ver como fazer
+                              </a>
+                            </div>
+                            <div className="flex gap-2 mt-1.5 flex-wrap">
                               <span className="text-xs bg-white border border-gray-200 px-2.5 py-1 rounded-full">
                                 {ex.sets} séries
                               </span>
