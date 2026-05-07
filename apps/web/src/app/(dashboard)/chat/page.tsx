@@ -21,7 +21,7 @@ const AGENTS: Record<AgentType, { label: string; icon: React.ReactNode; color: s
   NUTRITIONIST: {
     label: 'Nutricionista',
     icon: <Salad size={18} />,
-    color: 'text-green-600 bg-green-100',
+    color: 'text-gray-800 bg-gray-200',
     welcome: 'Olá! Sou sua nutricionista de IA. Posso criar dietas, calcular macros ou ajudar com substituições alimentares. O que você precisa?',
   },
   COACH: {

@@ -41,10 +41,10 @@ export default function ProgressChart({ data }: { data: ProgressLog[] }) {
       {
         label: 'Peso (kg)',
         data: values,
-        borderColor: '#22c55e',
-        backgroundColor: 'rgba(34, 197, 94, 0.1)',
+        borderColor: '#e5e7eb',
+        backgroundColor: 'rgba(229, 231, 235, 0.1)',
         borderWidth: 2,
-        pointBackgroundColor: '#22c55e',
+        pointBackgroundColor: '#e5e7eb',
         pointRadius: 4,
         fill: true,
         tension: 0.4,

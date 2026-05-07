@@ -19,7 +19,7 @@ interface DashboardData {
 
 const AGENT_LABELS: Record<string, { label: string; color: string }> = {
   TRAINER: { label: 'Personal Trainer', color: 'bg-blue-100 text-blue-700' },
-  NUTRITIONIST: { label: 'Nutricionista', color: 'bg-green-100 text-green-700' },
+  NUTRITIONIST: { label: 'Nutricionista', color: 'bg-gray-200 text-gray-800' },
   COACH: { label: 'Coach', color: 'bg-purple-100 text-purple-700' },
   ANALYST: { label: 'Analista', color: 'bg-orange-100 text-orange-700' },
 };
