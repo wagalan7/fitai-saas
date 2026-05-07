@@ -3,8 +3,10 @@ import Anthropic from '@anthropic-ai/sdk';
 import { AgentType } from '@prisma/client';
 import { TRAINER_SYSTEM_PROMPT } from './prompts/trainer.prompt';
 import { NUTRITIONIST_SYSTEM_PROMPT } from './prompts/nutritionist.prompt';
+import { WORKOUT_GENERATION_PROMPT, NUTRITION_GENERATION_PROMPT } from './prompts/generation.prompt';
 import { COACH_SYSTEM_PROMPT } from './prompts/coach.prompt';
 import { ANALYST_SYSTEM_PROMPT } from './prompts/analyst.prompt';
+import { EVALUATOR_SYSTEM_PROMPT } from './prompts/evaluator.prompt';
 import { MemoryService } from '../memory/memory.service';
 import { PrismaService } from '../common/prisma.service';
 
@@ -13,6 +15,7 @@ const SYSTEM_PROMPTS: Record<AgentType, string> = {
   NUTRITIONIST: NUTRITIONIST_SYSTEM_PROMPT,
   COACH: COACH_SYSTEM_PROMPT,
   ANALYST: ANALYST_SYSTEM_PROMPT,
+  EVALUATOR: EVALUATOR_SYSTEM_PROMPT,
   SYSTEM: '',
 };
 
@@ -83,7 +86,7 @@ ${recentProgress
   async streamChat(
     userId: string,
     agentType: AgentType,
-    messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+    messages: Array<{ role: 'user' | 'assistant'; content: string | Array<any> }>,
   ) {
     const context = await this.buildContext(userId, agentType);
     const systemPrompt = SYSTEM_PROMPTS[agentType];
@@ -102,11 +105,11 @@ ${recentProgress
     const response = await this.anthropic.messages.create({
       model: MODEL,
       max_tokens: 4000,
-      system: TRAINER_SYSTEM_PROMPT + '\n\nResponda APENAS com JSON válido, sem markdown, sem texto adicional.',
+      system: WORKOUT_GENERATION_PROMPT,
       messages: [
         {
           role: 'user',
-          content: `${context}\n\nCrie um plano de treino semanal completo e personalizado para este usuário. Retorne o JSON do plano de treino conforme o formato especificado.`,
+          content: `${context}\n\nCrie um plano de treino semanal completo e personalizado para este usuário.`,
         },
       ],
     });
@@ -122,11 +125,11 @@ ${recentProgress
     const response = await this.anthropic.messages.create({
       model: MODEL,
       max_tokens: 4000,
-      system: NUTRITIONIST_SYSTEM_PROMPT + '\n\nResponda APENAS com JSON válido, sem markdown, sem texto adicional.',
+      system: NUTRITION_GENERATION_PROMPT,
       messages: [
         {
           role: 'user',
-          content: `${context}\n\nCrie um plano alimentar diário completo e personalizado para este usuário. Retorne o JSON do plano nutricional conforme o formato especificado.`,
+          content: `${context}\n\nCrie um plano alimentar diário completo e personalizado para este usuário.`,
         },
       ],
     });

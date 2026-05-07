@@ -1,17 +1,17 @@
 'use client';
 
-import { useEffect, useRef, useState, Suspense } from 'react';
+import { useEffect, useRef, useState, Suspense, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
-import { Send, Plus, Dumbbell, Salad, Brain, TrendingUp } from 'lucide-react';
+import { Send, Plus, Dumbbell, Salad, Brain, TrendingUp, Camera, X, ImageIcon, Play } from 'lucide-react';
 import { useChatStore } from '@/store/chat.store';
 import { useSocket } from '@/hooks/useSocket';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 
-type AgentType = 'TRAINER' | 'NUTRITIONIST' | 'COACH' | 'ANALYST';
+type AgentType = 'TRAINER' | 'NUTRITIONIST' | 'COACH' | 'ANALYST' | 'EVALUATOR';
 
-const AGENTS: Record<AgentType, { label: string; icon: React.ReactNode; color: string; welcome: string }> = {
+const AGENTS: Record<AgentType, { label: string; icon: React.ReactNode; color: string; welcome: string; supportsImage?: boolean }> = {
   TRAINER: {
     label: 'Personal Trainer',
     icon: <Dumbbell size={18} />,
@@ -36,7 +36,90 @@ const AGENTS: Record<AgentType, { label: string; icon: React.ReactNode; color: s
     color: 'text-orange-600 bg-orange-100',
     welcome: 'Olá! Sou seu analista de performance. Posso analisar sua evolução, identificar padrões e gerar insights sobre seu progresso. O que quer analisar?',
   },
+  EVALUATOR: {
+    label: 'Avaliador Corporal',
+    icon: <Camera size={18} />,
+    color: 'text-pink-600 bg-pink-100',
+    welcome: 'Olá! Sou o Dr. Shape, seu especialista em avaliação corporal. Envie uma foto do seu corpo (frente, costas ou lateral) e farei uma análise completa da sua composição e evolução. 📸',
+    supportsImage: true,
+  },
 };
+
+interface ChatMessage {
+  role: string;
+  content: string;
+  imagePreview?: string;
+  streaming?: boolean;
+}
+
+// Render markdown-like formatting inline
+function renderInline(text: string): React.ReactNode[] {
+  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, i) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return <strong key={i}>{part.slice(2, -2)}</strong>;
+    }
+    return <span key={i}>{part}</span>;
+  });
+}
+
+// Extract exercise names from a line for the animation button
+function extractExerciseName(line: string): string | null {
+  // Match patterns like: "**Exercício 1 — Supino Reto**" or "- **Supino Reto**"
+  const boldMatch = line.match(/\*\*([^*]{4,60})\*\*/);
+  if (!boldMatch) return null;
+  const name = boldMatch[1].trim();
+  // Filter out section headers and metadata
+  if (/^(treino|dia|semana|grupo|muscular|aquecimento|volta à calma|obs|dica|note|atenção|importante)/i.test(name)) return null;
+  if (/^\d+\s*[—–-]/.test(name)) {
+    // "1 — Supino Reto" → extract after the dash
+    const afterDash = name.replace(/^\d+\s*[—–-]\s*/, '').trim();
+    return afterDash || null;
+  }
+  return name;
+}
+
+function MessageContent({ content, agentType, streaming }: { content: string; agentType: AgentType; streaming?: boolean }) {
+  const lines = content.split('\n');
+  const isTrainer = agentType === 'TRAINER';
+
+  return (
+    <div className="text-sm leading-relaxed space-y-0.5">
+      {lines.map((line, i) => {
+        const exerciseName = isTrainer ? extractExerciseName(line) : null;
+        const trimmed = line.trim();
+
+        if (trimmed === '') return <div key={i} className="h-2" />;
+
+        if (trimmed.startsWith('#')) {
+          const level = trimmed.match(/^#+/)?.[0].length ?? 1;
+          const text = trimmed.replace(/^#+\s*/, '');
+          const cls = level === 1 ? 'font-bold text-base mt-2' : level === 2 ? 'font-semibold mt-2' : 'font-medium mt-1';
+          return <p key={i} className={cls}>{text}</p>;
+        }
+
+        return (
+          <div key={i} className="flex flex-wrap items-center gap-x-2">
+            <p>{renderInline(line)}</p>
+            {exerciseName && (
+              <a
+                href={`https://www.youtube.com/results?search_query=${encodeURIComponent(exerciseName + ' como fazer execução')}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-full transition-colors flex-shrink-0"
+                title={`Ver como fazer: ${exerciseName}`}
+              >
+                <Play size={10} fill="currentColor" />
+                Ver como fazer
+              </a>
+            )}
+          </div>
+        );
+      })}
+      {streaming && <span className="inline-block w-1.5 h-4 bg-gray-400 animate-pulse ml-0.5 rounded-sm" />}
+    </div>
+  );
+}
 
 function ChatPageInner() {
   const searchParams = useSearchParams();
@@ -44,10 +127,13 @@ function ChatPageInner() {
 
   const [activeAgent, setActiveAgent] = useState<AgentType>(defaultAgent);
   const [sessionId, setSessionId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<Array<{ role: string; content: string; streaming?: boolean }>>([]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { token } = useAuthStore();
   const socket = useSocket(token);
 
@@ -58,14 +144,14 @@ function ChatPageInner() {
     });
     setSessionId(data.id);
     setMessages([{ role: 'assistant', content: AGENTS[agent].welcome }]);
+    setSelectedImage(null);
+    setImagePreview(null);
   }
 
-  // Create or load session
   useEffect(() => {
     startNewSession(activeAgent);
   }, [activeAgent]);
 
-  // Socket events
   useEffect(() => {
     if (!socket) return;
 
@@ -90,9 +176,7 @@ function ChatPageInner() {
       setMessages((prev) => {
         const updated = [...prev];
         const last = updated[updated.length - 1];
-        if (last?.streaming) {
-          updated[updated.length - 1] = { ...last, streaming: false };
-        }
+        if (last?.streaming) updated[updated.length - 1] = { ...last, streaming: false };
         return updated;
       });
     });
@@ -117,17 +201,53 @@ function ChatPageInner() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function sendMessage() {
-    if (!input.trim() || isStreaming || !sessionId || !socket) return;
+  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setSelectedImage(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setImagePreview(reader.result as string);
+    reader.readAsDataURL(file);
+    e.target.value = '';
+  }
+
+  function clearImage() {
+    setSelectedImage(null);
+    setImagePreview(null);
+  }
+
+  async function sendMessage() {
+    const hasImage = !!selectedImage;
+    const hasText = input.trim().length > 0;
+    if ((!hasText && !hasImage) || isStreaming || !sessionId || !socket) return;
 
     const content = input.trim();
     setInput('');
-    setMessages((prev) => [...prev, { role: 'user', content }]);
 
-    socket.emit('message', { sessionId, agentType: activeAgent, content });
+    if (hasImage && imagePreview) {
+      // Show image preview in user bubble
+      setMessages((prev) => [...prev, { role: 'user', content, imagePreview }]);
+
+      // Convert to base64 (strip data URL prefix)
+      const base64 = imagePreview.split(',')[1];
+      const mimeType = selectedImage!.type || 'image/jpeg';
+
+      clearImage();
+      socket.emit('message', {
+        sessionId,
+        agentType: activeAgent,
+        content: content || 'Por favor, analise esta foto.',
+        imageBase64: base64,
+        imageMimeType: mimeType,
+      });
+    } else {
+      setMessages((prev) => [...prev, { role: 'user', content }]);
+      socket.emit('message', { sessionId, agentType: activeAgent, content });
+    }
   }
 
   const agent = AGENTS[activeAgent];
+  const canUploadImage = agent.supportsImage;
 
   return (
     <div className="h-full flex gap-4">
@@ -157,7 +277,9 @@ function ChatPageInner() {
           <span className={`p-2 rounded-xl ${agent.color}`}>{agent.icon}</span>
           <div>
             <p className="font-semibold text-gray-900">{agent.label}</p>
-            <p className="text-xs text-gray-400">IA • Responde em tempo real</p>
+            <p className="text-xs text-gray-400">
+              {canUploadImage ? 'IA • Análise visual com fotos' : 'IA • Responde em tempo real'}
+            </p>
           </div>
           <button
             onClick={() => startNewSession(activeAgent)}
@@ -182,19 +304,62 @@ function ChatPageInner() {
                   {agent.icon}
                 </span>
               )}
-              <div
-                className={msg.role === 'user' ? 'chat-bubble-user' : `chat-bubble-ai ${msg.streaming ? 'streaming-cursor' : ''}`}
-              >
-                <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+              <div className={msg.role === 'user' ? 'chat-bubble-user max-w-xs' : 'chat-bubble-ai'}>
+                {msg.imagePreview && (
+                  <img
+                    src={msg.imagePreview}
+                    alt="Foto enviada"
+                    className="rounded-lg mb-2 max-w-[220px] max-h-[280px] object-cover"
+                  />
+                )}
+                {msg.role === 'assistant' ? (
+                  <MessageContent content={msg.content} agentType={activeAgent} streaming={msg.streaming} />
+                ) : (
+                  msg.content && <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                )}
               </div>
             </motion.div>
           ))}
           <div ref={messagesEndRef} />
         </div>
 
+        {/* Image preview */}
+        {imagePreview && (
+          <div className="px-4 pb-2">
+            <div className="relative inline-block">
+              <img src={imagePreview} alt="Preview" className="h-20 rounded-lg object-cover border border-gray-200" />
+              <button
+                onClick={clearImage}
+                className="absolute -top-2 -right-2 w-5 h-5 bg-gray-700 text-white rounded-full flex items-center justify-center hover:bg-red-500 transition-colors"
+              >
+                <X size={10} />
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Input */}
         <div className="p-4 border-t border-gray-100">
-          <div className="flex items-end gap-3">
+          <div className="flex items-end gap-2">
+            {canUploadImage && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageSelect}
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isStreaming}
+                  title="Enviar foto"
+                  className="w-11 h-11 flex-shrink-0 border border-gray-200 bg-white hover:bg-gray-50 disabled:opacity-40 text-gray-500 rounded-xl flex items-center justify-center transition-colors"
+                >
+                  <ImageIcon size={18} />
+                </button>
+              </>
+            )}
             <textarea
               rows={1}
               value={input}
@@ -205,20 +370,26 @@ function ChatPageInner() {
                   sendMessage();
                 }
               }}
-              placeholder={`Mensagem para ${agent.label}...`}
+              placeholder={
+                canUploadImage
+                  ? 'Envie uma foto ou escreva uma dúvida...'
+                  : `Mensagem para ${agent.label}...`
+              }
               className="flex-1 bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent max-h-32 overflow-y-auto"
               disabled={isStreaming}
             />
             <button
               onClick={sendMessage}
-              disabled={!input.trim() || isStreaming}
-              className="w-11 h-11 bg-primary-500 hover:bg-primary-600 disabled:opacity-40 text-white rounded-xl flex items-center justify-center transition-colors flex-shrink-0"
+              disabled={(!input.trim() && !selectedImage) || isStreaming}
+              className="w-11 h-11 flex-shrink-0 bg-primary-500 hover:bg-primary-600 disabled:opacity-40 text-white rounded-xl flex items-center justify-center transition-colors"
             >
               <Send size={16} />
             </button>
           </div>
           <p className="text-xs text-gray-400 mt-2 text-center">
-            Enter para enviar · Shift+Enter para nova linha
+            {canUploadImage
+              ? 'Envie foto + mensagem ou só a foto para análise'
+              : 'Enter para enviar · Shift+Enter para nova linha'}
           </p>
         </div>
       </div>

@@ -307,6 +307,7 @@ enum AgentType {
   NUTRITIONIST
   COACH
   ANALYST
+  EVALUATOR
   SYSTEM
 }
 

@@ -56,18 +56,41 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       sessionId: string;
       agentType: AgentType;
       content: string;
+      imageBase64?: string;
+      imageMimeType?: string;
     },
   ) {
-    const { sessionId, agentType, content } = data;
+    const { sessionId, agentType, content, imageBase64, imageMimeType } = data;
     const userId = client.userId;
 
-    await this.chatService.saveMessage(sessionId, 'USER', content);
+    const textForSave = imageBase64 ? `[Foto enviada] ${content || ''}`.trim() : content;
+    await this.chatService.saveMessage(sessionId, 'USER', textForSave);
 
     const history = await this.chatService.getSessionMessages(sessionId, 20);
-    const messages = history.map((m) => ({
-      role: m.role === 'USER' ? ('user' as const) : ('assistant' as const),
-      content: m.content,
-    }));
+    const messages: Array<{ role: 'user' | 'assistant'; content: string | Array<any> }> =
+      history.slice(0, -1).map((m) => ({
+        role: m.role === 'USER' ? ('user' as const) : ('assistant' as const),
+        content: m.content,
+      }));
+
+    // Build the last user message (with optional image)
+    if (imageBase64) {
+      const msgContent: Array<any> = [
+        {
+          type: 'image',
+          source: {
+            type: 'base64',
+            media_type: imageMimeType || 'image/jpeg',
+            data: imageBase64,
+          },
+        },
+      ];
+      if (content?.trim()) msgContent.push({ type: 'text', text: content.trim() });
+      else msgContent.push({ type: 'text', text: 'Por favor, analise esta foto.' });
+      messages.push({ role: 'user', content: msgContent });
+    } else {
+      messages.push({ role: 'user', content });
+    }
 
     client.emit('stream:start', { sessionId });
 
