@@ -8,4 +8,4 @@ cmds = ["npm install --include=dev"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "node .next/standalone/server.js"
+cmd = "npx next start -p ${PORT:-3000}"
