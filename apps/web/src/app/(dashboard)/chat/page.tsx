@@ -51,17 +51,18 @@ function ChatPageInner() {
   const { token } = useAuthStore();
   const socket = useSocket(token);
 
+  async function startNewSession(agent: AgentType = activeAgent) {
+    const { data } = await api.post('/chat/sessions', {
+      agentType: agent,
+      title: `${AGENTS[agent].label} — ${new Date().toLocaleDateString('pt-BR')}`,
+    });
+    setSessionId(data.id);
+    setMessages([{ role: 'assistant', content: AGENTS[agent].welcome }]);
+  }
+
   // Create or load session
   useEffect(() => {
-    async function initSession() {
-      const { data } = await api.post('/chat/sessions', {
-        agentType: activeAgent,
-        title: `${AGENTS[activeAgent].label} — ${new Date().toLocaleDateString('pt-BR')}`,
-      });
-      setSessionId(data.id);
-      setMessages([{ role: 'assistant', content: AGENTS[activeAgent].welcome }]);
-    }
-    initSession();
+    startNewSession(activeAgent);
   }, [activeAgent]);
 
   // Socket events
@@ -159,7 +160,8 @@ function ChatPageInner() {
             <p className="text-xs text-gray-400">IA • Responde em tempo real</p>
           </div>
           <button
-            onClick={() => setActiveAgent(activeAgent)}
+            onClick={() => startNewSession(activeAgent)}
+            title="Nova conversa"
             className="ml-auto p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <Plus size={18} />
