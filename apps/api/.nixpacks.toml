@@ -8,4 +8,4 @@ cmds = ["npm install"]
 cmds = ["npx prisma generate", "npx nest build"]
 
 [start]
-cmd = "node dist/main.js"
+cmd = "npx prisma db push --skip-generate && node dist/main.js"
