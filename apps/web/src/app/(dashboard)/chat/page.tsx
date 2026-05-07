@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, Suspense, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { Send, Plus, Dumbbell, Salad, Brain, TrendingUp, Camera, X, ImageIcon, Play } from 'lucide-react';
+import Link from 'next/link';
 import { useChatStore } from '@/store/chat.store';
 import { useSocket } from '@/hooks/useSocket';
 import { api } from '@/lib/api';
@@ -50,6 +51,7 @@ interface ChatMessage {
   content: string;
   imagePreview?: string;
   streaming?: boolean;
+  savedPlan?: 'saving' | 'saved' | 'error';
 }
 
 // Render markdown-like formatting inline
@@ -216,6 +218,36 @@ function ChatPageInner() {
     setImagePreview(null);
   }
 
+  async function savePlan(index: number) {
+    const msg = messages[index];
+    if (!msg) return;
+
+    setMessages((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], savedPlan: 'saving' };
+      return updated;
+    });
+
+    try {
+      if (activeAgent === 'TRAINER') {
+        await api.post('/workouts/save-from-chat', { text: msg.content });
+      } else {
+        await api.post('/nutrition/save-from-chat', { text: msg.content });
+      }
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], savedPlan: 'saved' };
+        return updated;
+      });
+    } catch {
+      setMessages((prev) => {
+        const updated = [...prev];
+        updated[index] = { ...updated[index], savedPlan: 'error' };
+        return updated;
+      });
+    }
+  }
+
   async function sendMessage() {
     const hasImage = !!selectedImage;
     const hasText = input.trim().length > 0;
@@ -297,27 +329,63 @@ function ChatPageInner() {
               key={i}
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
             >
-              {msg.role === 'assistant' && (
-                <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mr-2 mt-1 text-sm ${agent.color}`}>
-                  {agent.icon}
-                </span>
-              )}
-              <div className={msg.role === 'user' ? 'chat-bubble-user max-w-xs' : 'chat-bubble-ai'}>
-                {msg.imagePreview && (
-                  <img
-                    src={msg.imagePreview}
-                    alt="Foto enviada"
-                    className="rounded-lg mb-2 max-w-[220px] max-h-[280px] object-cover"
-                  />
+              <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} w-full`}>
+                {msg.role === 'assistant' && (
+                  <span className={`w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mr-2 mt-1 text-sm ${agent.color}`}>
+                    {agent.icon}
+                  </span>
                 )}
-                {msg.role === 'assistant' ? (
-                  <MessageContent content={msg.content} agentType={activeAgent} streaming={msg.streaming} />
-                ) : (
-                  msg.content && <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
-                )}
+                <div className={msg.role === 'user' ? 'chat-bubble-user max-w-xs' : 'chat-bubble-ai'}>
+                  {msg.imagePreview && (
+                    <img
+                      src={msg.imagePreview}
+                      alt="Foto enviada"
+                      className="rounded-lg mb-2 max-w-[220px] max-h-[280px] object-cover"
+                    />
+                  )}
+                  {msg.role === 'assistant' ? (
+                    <MessageContent content={msg.content} agentType={activeAgent} streaming={msg.streaming} />
+                  ) : (
+                    msg.content && <p className="text-sm leading-relaxed whitespace-pre-wrap">{msg.content}</p>
+                  )}
+                </div>
               </div>
+              {msg.role === 'assistant' &&
+                !msg.streaming &&
+                (activeAgent === 'TRAINER' || activeAgent === 'NUTRITIONIST') &&
+                msg.content.length > 150 && (
+                <div className="ml-9 mt-1">
+                  {!msg.savedPlan && (
+                    <button
+                      onClick={() => savePlan(i)}
+                      className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-600 hover:border-primary-400 hover:text-primary-600 transition-colors shadow-sm"
+                    >
+                      💾 {activeAgent === 'TRAINER' ? 'Salvar como Plano de Treino' : 'Salvar como Plano Alimentar'}
+                    </button>
+                  )}
+                  {msg.savedPlan === 'saving' && (
+                    <span className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-gray-400">
+                      <span className="inline-block w-3 h-3 border border-gray-400 border-t-transparent rounded-full animate-spin" />
+                      Salvando...
+                    </span>
+                  )}
+                  {msg.savedPlan === 'saved' && (
+                    <Link
+                      href={activeAgent === 'TRAINER' ? '/workouts' : '/nutrition'}
+                      className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-50 border border-green-200 text-green-700 hover:bg-green-100 transition-colors"
+                    >
+                      ✅ Plano salvo! Ver em {activeAgent === 'TRAINER' ? 'Treinos' : 'Nutrição'} →
+                    </Link>
+                  )}
+                  {msg.savedPlan === 'error' && (
+                    <span className="text-xs px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-600">
+                      ❌ Erro ao salvar
+                    </span>
+                  )}
+                </div>
+              )}
             </motion.div>
           ))}
           <div ref={messagesEndRef} />

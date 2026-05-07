@@ -10,6 +10,7 @@ export default function WorkoutsPage() {
   const [plan, setPlan] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
 
   useEffect(() => {
@@ -28,9 +29,12 @@ export default function WorkoutsPage() {
 
   async function generatePlan() {
     setGenerating(true);
+    setGenerateError(null);
     try {
       const { data } = await api.post('/workouts/generate');
       setPlan(data);
+    } catch (err: any) {
+      setGenerateError(err?.response?.data?.message || 'Erro ao gerar plano. Tente novamente.');
     } finally {
       setGenerating(false);
     }
@@ -60,6 +64,12 @@ export default function WorkoutsPage() {
           {generating ? 'Gerando...' : plan ? 'Regenerar' : 'Gerar Treino'}
         </button>
       </div>
+
+      {generateError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+          {generateError}
+        </div>
+      )}
 
       {!plan && !generating && (
         <div className="card p-12 text-center">

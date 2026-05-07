@@ -12,6 +12,14 @@ export class NutritionController {
     return this.nutritionService.generatePlan(req.user.id);
   }
 
+  @Post('save-from-chat')
+  savePlanFromChat(
+    @Req() req: { user: { id: string } },
+    @Body() body: { text: string },
+  ) {
+    return this.nutritionService.savePlanFromText(req.user.id, body.text);
+  }
+
   @Get('plan')
   getPlan(@Req() req: { user: { id: string } }) {
     return this.nutritionService.getPlan(req.user.id);

@@ -99,6 +99,73 @@ ${recentProgress
     });
   }
 
+  async extractWorkoutFromText(text: string): Promise<any> {
+    const response = await this.anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 8000,
+      system: `Você recebe a descrição de um plano de treino em texto e deve convertê-la para JSON estruturado.
+Responda APENAS com JSON válido neste formato exato:
+{
+  "name": "Nome do plano",
+  "description": "Descrição curta",
+  "sessions": [{
+    "name": "Treino A — Peito e Tríceps",
+    "dayOfWeek": 1,
+    "muscleGroups": ["peito","tríceps"],
+    "estimatedTime": 60,
+    "exercises": [{
+      "order": 1,
+      "name": "Supino Reto",
+      "sets": 4,
+      "reps": "8-12",
+      "restSeconds": 90,
+      "notes": "dica opcional"
+    }]
+  }]
+}
+Inferir valores faltantes com base em boas práticas. Sem markdown, apenas JSON puro.`,
+      messages: [{ role: 'user', content: `Converta este plano de treino para JSON:\n\n${text}` }],
+    });
+    const raw = response.content[0].type === 'text' ? response.content[0].text : '{}';
+    return this.extractJson(raw);
+  }
+
+  async extractNutritionFromText(text: string): Promise<any> {
+    const response = await this.anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 8000,
+      system: `Você recebe a descrição de um plano alimentar em texto e deve convertê-la para JSON estruturado.
+Responda APENAS com JSON válido neste formato exato:
+{
+  "calories": 2200,
+  "proteinG": 160,
+  "carbsG": 220,
+  "fatG": 73,
+  "meals": [{
+    "name": "Café da Manhã",
+    "timeOfDay": "breakfast",
+    "calories": 450,
+    "proteinG": 30,
+    "carbsG": 55,
+    "fatG": 10,
+    "foods": [{
+      "name": "Aveia",
+      "quantityG": 80,
+      "calories": 300,
+      "proteinG": 10,
+      "carbsG": 54,
+      "fatG": 6,
+      "alternatives": ["granola"]
+    }]
+  }]
+}
+Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JSON puro.`,
+      messages: [{ role: 'user', content: `Converta este plano alimentar para JSON:\n\n${text}` }],
+    });
+    const raw = response.content[0].type === 'text' ? response.content[0].text : '{}';
+    return this.extractJson(raw);
+  }
+
   private extractJson(text: string): any {
     // Strip markdown code fences
     let clean = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();

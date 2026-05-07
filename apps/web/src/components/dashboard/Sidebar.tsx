@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Dumbbell, LayoutDashboard, MessageSquare, Salad, TrendingUp, Settings, LogOut } from 'lucide-react';
+import { Dumbbell, LayoutDashboard, MessageSquare, Salad, TrendingUp, Settings, LogOut, Camera } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
 import { api } from '@/lib/api';
 import { useRouter } from 'next/navigation';
@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: '/workouts', icon: Dumbbell, label: 'Treinos' },
   { href: '/nutrition', icon: Salad, label: 'Nutrição' },
   { href: '/progress', icon: TrendingUp, label: 'Progresso' },
+  { href: '/chat?agent=EVALUATOR', icon: Camera, label: 'Dr. Shape' },
 ];
 
 export default function Sidebar() {

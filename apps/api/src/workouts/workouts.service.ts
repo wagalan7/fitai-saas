@@ -46,6 +46,42 @@ export class WorkoutsService {
     });
   }
 
+  async savePlanFromText(userId: string, text: string) {
+    const planData = await this.agentsService.extractWorkoutFromText(text);
+
+    await this.prisma.workoutPlan.updateMany({
+      where: { userId, isActive: true },
+      data: { isActive: false },
+    });
+
+    return this.prisma.workoutPlan.create({
+      data: {
+        userId,
+        name: planData.name || 'Plano do Chat',
+        description: planData.description,
+        sessions: {
+          create: (planData.sessions || []).map((session: any) => ({
+            dayOfWeek: session.dayOfWeek ?? 1,
+            name: session.name,
+            muscleGroups: session.muscleGroups || [],
+            estimatedTime: session.estimatedTime || 60,
+            exercises: {
+              create: (session.exercises || []).map((ex: any) => ({
+                order: ex.order,
+                name: ex.name,
+                sets: ex.sets,
+                reps: String(ex.reps),
+                restSeconds: ex.restSeconds,
+                notes: ex.notes,
+              })),
+            },
+          })),
+        },
+      },
+      include: { sessions: { include: { exercises: true } } },
+    });
+  }
+
   async getActivePlan(userId: string) {
     return this.prisma.workoutPlan.findFirst({
       where: { userId, isActive: true },

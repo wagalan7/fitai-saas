@@ -8,6 +8,7 @@ export default function NutritionPage() {
   const [plan, setPlan] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [generateError, setGenerateError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => { loadPlan(); }, []);
@@ -24,9 +25,12 @@ export default function NutritionPage() {
 
   async function generatePlan() {
     setGenerating(true);
+    setGenerateError(null);
     try {
       const { data } = await api.post('/nutrition/generate');
       setPlan(data);
+    } catch (err: any) {
+      setGenerateError(err?.response?.data?.message || 'Erro ao gerar plano. Tente novamente.');
     } finally {
       setGenerating(false);
     }
@@ -50,6 +54,12 @@ export default function NutritionPage() {
           {generating ? 'Calculando...' : plan ? 'Atualizar' : 'Gerar Dieta'}
         </button>
       </div>
+
+      {generateError && (
+        <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+          {generateError}
+        </div>
+      )}
 
       {!plan && !generating && (
         <div className="card p-12 text-center">

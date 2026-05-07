@@ -12,6 +12,14 @@ export class WorkoutsController {
     return this.workoutsService.generatePlan(req.user.id);
   }
 
+  @Post('save-from-chat')
+  savePlanFromChat(
+    @Req() req: { user: { id: string } },
+    @Body() body: { text: string },
+  ) {
+    return this.workoutsService.savePlanFromText(req.user.id, body.text);
+  }
+
   @Get('plan')
   getActivePlan(@Req() req: { user: { id: string } }) {
     return this.workoutsService.getActivePlan(req.user.id);

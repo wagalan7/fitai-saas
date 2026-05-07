@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
-import { Dumbbell, Salad, TrendingUp, Target, Flame, Activity } from 'lucide-react';
+import { Dumbbell, Salad, TrendingUp, Target, Flame, Activity, Camera } from 'lucide-react';
 import Link from 'next/link';
 import ProgressChart from '@/components/dashboard/ProgressChart';
 
@@ -22,6 +22,7 @@ const AGENT_LABELS: Record<string, { label: string; color: string }> = {
   NUTRITIONIST: { label: 'Nutricionista', color: 'bg-gray-200 text-gray-800' },
   COACH: { label: 'Coach', color: 'bg-purple-100 text-purple-700' },
   ANALYST: { label: 'Analista', color: 'bg-orange-100 text-orange-700' },
+  EVALUATOR: { label: 'Dr. Shape', color: 'bg-pink-100 text-pink-700' },
 };
 
 export default function DashboardPage() {
@@ -99,7 +100,7 @@ export default function DashboardPage() {
       )}
 
       {/* Quick actions */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <QuickAction
           href="/chat?agent=TRAINER"
           icon={<Dumbbell size={24} className="text-blue-500" />}
@@ -120,6 +121,13 @@ export default function DashboardPage() {
           title="Falar com Coach"
           desc="Motivação e consistência"
           bg="bg-purple-50 hover:bg-purple-100"
+        />
+        <QuickAction
+          href="/chat?agent=EVALUATOR"
+          icon={<Camera size={24} className="text-pink-500" />}
+          title="Dr. Shape"
+          desc="Avaliação corporal com foto"
+          bg="bg-pink-50 hover:bg-pink-100"
         />
       </div>
 
