@@ -99,24 +99,44 @@ ${recentProgress
     });
   }
 
+  private extractJson(text: string): any {
+    // Strip markdown code fences
+    let clean = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    // Try direct parse first
+    try {
+      return JSON.parse(clean);
+    } catch {
+      // Find the first { or [ and last } or ]
+      const start = clean.search(/[\[{]/);
+      const end = Math.max(clean.lastIndexOf('}'), clean.lastIndexOf(']'));
+      if (start !== -1 && end !== -1 && end > start) {
+        try {
+          return JSON.parse(clean.slice(start, end + 1));
+        } catch {
+          // nothing
+        }
+      }
+      throw new Error(`Invalid JSON from model: ${clean.slice(0, 200)}`);
+    }
+  }
+
   async generateWorkoutPlan(userId: string) {
     const context = await this.buildContext(userId, AgentType.TRAINER);
 
     const response = await this.anthropic.messages.create({
       model: MODEL,
-      max_tokens: 4000,
+      max_tokens: 8000,
       system: WORKOUT_GENERATION_PROMPT,
       messages: [
         {
           role: 'user',
-          content: `${context}\n\nCrie um plano de treino semanal completo e personalizado para este usuário.`,
+          content: `${context}\n\nCrie um plano de treino semanal completo e personalizado para este usuário. Responda APENAS com o JSON, sem nenhum texto antes ou depois.`,
         },
       ],
     });
 
     const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
-    const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    return JSON.parse(clean);
+    return this.extractJson(text);
   }
 
   async generateNutritionPlan(userId: string) {
@@ -124,18 +144,17 @@ ${recentProgress
 
     const response = await this.anthropic.messages.create({
       model: MODEL,
-      max_tokens: 4000,
+      max_tokens: 8000,
       system: NUTRITION_GENERATION_PROMPT,
       messages: [
         {
           role: 'user',
-          content: `${context}\n\nCrie um plano alimentar diário completo e personalizado para este usuário.`,
+          content: `${context}\n\nCrie um plano alimentar diário completo e personalizado para este usuário. Responda APENAS com o JSON, sem nenhum texto antes ou depois.`,
         },
       ],
     });
 
     const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
-    const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-    return JSON.parse(clean);
+    return this.extractJson(text);
   }
 }
