@@ -230,9 +230,9 @@ function ChatPageInner() {
 
     try {
       if (activeAgent === 'TRAINER') {
-        await api.post('/workouts/save-from-chat', { text: msg.content });
+        await api.post('/workouts/save-from-chat', { text: msg.content }, { timeout: 60000 });
       } else {
-        await api.post('/nutrition/save-from-chat', { text: msg.content });
+        await api.post('/nutrition/save-from-chat', { text: msg.content }, { timeout: 60000 });
       }
       setMessages((prev) => {
         const updated = [...prev];

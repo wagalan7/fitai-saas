@@ -101,8 +101,8 @@ ${recentProgress
 
   async extractWorkoutFromText(text: string): Promise<any> {
     const response = await this.anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
+      model: 'claude-haiku-4-5',
+      max_tokens: 4000,
       system: `Você recebe a descrição de um plano de treino em texto e deve convertê-la para JSON estruturado.
 Responda APENAS com JSON válido neste formato exato:
 {
@@ -132,8 +132,8 @@ Inferir valores faltantes com base em boas práticas. Sem markdown, apenas JSON 
 
   async extractNutritionFromText(text: string): Promise<any> {
     const response = await this.anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 8000,
+      model: 'claude-haiku-4-5',
+      max_tokens: 4000,
       system: `Você recebe a descrição de um plano alimentar em texto e deve convertê-la para JSON estruturado.
 Responda APENAS com JSON válido neste formato exato:
 {
