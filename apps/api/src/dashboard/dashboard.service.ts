@@ -53,7 +53,10 @@ export class DashboardService {
       }),
       this.prisma.workoutLog.findMany({
         where: { userId, completedAt: { gte: todayStart } },
-        select: { durationMinutes: true },
+        select: {
+          durationMinutes: true,
+          workoutSession: { select: { estimatedTime: true } },
+        },
       }),
     ]);
 
@@ -63,9 +66,10 @@ export class DashboardService {
     const adherencePct = Math.min(100, Math.round((weeklyWorkoutCount / weeklyTarget) * 100));
 
     // Estimate calories burned today: MET × weight(kg) × hours
+    // Use actual duration if logged, otherwise fall back to session's estimatedTime
     const weightKg = profile?.weightKg || 75;
     const calsBurnedToday = todayWorkoutLogs.reduce((sum, w) => {
-      const mins = w.durationMinutes || 0;
+      const mins = w.durationMinutes ?? w.workoutSession?.estimatedTime ?? 60;
       return sum + Math.round(WORKOUT_MET * weightKg * (mins / 60));
     }, 0);
 
