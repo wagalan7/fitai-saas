@@ -139,4 +139,13 @@ export class WorkoutsService {
       },
     });
   }
+
+  async deleteWorkoutLog(userId: string, logId: string) {
+    const log = await this.prisma.workoutLog.findUnique({ where: { id: logId } });
+    if (!log || log.userId !== userId) {
+      throw new NotFoundException('Registro não encontrado');
+    }
+    await this.prisma.workoutLog.delete({ where: { id: logId } });
+    return { deleted: true };
+  }
 }

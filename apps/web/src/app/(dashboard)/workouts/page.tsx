@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play, CheckCircle, Star } from 'lucide-react';
+import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play, CheckCircle, Star, Trash2 } from 'lucide-react';
 
 const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -14,7 +14,8 @@ export default function WorkoutsPage() {
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [loggingSessionId, setLoggingSessionId] = useState<string | null>(null);
   const [logForm, setLogForm] = useState<{ duration: string; rating: number; notes: string }>({ duration: '', rating: 0, notes: '' });
-  const [logSuccess, setLogSuccess] = useState<string | null>(null);
+  // maps sessionId → logId (so we can delete)
+  const [logSuccess, setLogSuccess] = useState<Record<string, string>>({});
 
   useEffect(() => {
     loadPlan();
@@ -32,17 +33,32 @@ export default function WorkoutsPage() {
 
   async function logWorkout(sessionId: string) {
     try {
-      await api.post('/workouts/log', {
+      const { data } = await api.post('/workouts/log', {
         workoutSessionId: sessionId,
         durationMinutes: parseInt(logForm.duration) || undefined,
         rating: logForm.rating || undefined,
         notes: logForm.notes || undefined,
       });
-      setLogSuccess(sessionId);
+      setLogSuccess((prev) => ({ ...prev, [sessionId]: data.id }));
       setLoggingSessionId(null);
       setLogForm({ duration: '', rating: 0, notes: '' });
     } catch {
       // silently fail — user can retry
+    }
+  }
+
+  async function deleteLog(sessionId: string) {
+    const logId = logSuccess[sessionId];
+    if (!logId) return;
+    try {
+      await api.delete(`/workouts/log/${logId}`);
+      setLogSuccess((prev) => {
+        const updated = { ...prev };
+        delete updated[sessionId];
+        return updated;
+      });
+    } catch {
+      // silently fail
     }
   }
 
@@ -151,10 +167,19 @@ export default function WorkoutsPage() {
                   <div className="border-t border-gray-100 p-5">
                     {/* Log workout trigger button */}
                     <div className="mb-4">
-                      {logSuccess === session.id ? (
-                        <span className="inline-flex items-center gap-1.5 text-sm text-green-700 font-medium">
-                          <CheckCircle size={16} className="text-green-600" /> Treino registrado!
-                        </span>
+                      {logSuccess[session.id] ? (
+                        <div className="flex items-center gap-3">
+                          <span className="inline-flex items-center gap-1.5 text-sm text-green-700 font-medium">
+                            <CheckCircle size={16} className="text-green-600" /> Treino registrado!
+                          </span>
+                          <button
+                            onClick={() => deleteLog(session.id)}
+                            className="inline-flex items-center gap-1 text-xs text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded-lg transition-colors"
+                            title="Excluir registro"
+                          >
+                            <Trash2 size={13} /> Excluir
+                          </button>
+                        </div>
                       ) : (
                         <button
                           onClick={() => {

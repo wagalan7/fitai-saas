@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Req } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, UseGuards, Req, ForbiddenException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WorkoutsService } from './workouts.service';
 
@@ -43,5 +43,13 @@ export class WorkoutsController {
   @Get('history')
   getHistory(@Req() req: { user: { id: string } }) {
     return this.workoutsService.getWorkoutHistory(req.user.id);
+  }
+
+  @Delete('log/:id')
+  async deleteLog(
+    @Req() req: { user: { id: string } },
+    @Param('id') logId: string,
+  ) {
+    return this.workoutsService.deleteWorkoutLog(req.user.id, logId);
   }
 }
