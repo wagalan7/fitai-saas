@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { Salad, RefreshCw, ChevronDown, ChevronUp } from 'lucide-react';
+import { Salad, RefreshCw, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 
 export default function NutritionPage() {
   const [plan, setPlan] = useState<any>(null);
@@ -10,6 +10,7 @@ export default function NutritionPage() {
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [loggedMeals, setLoggedMeals] = useState<Set<string>>(new Set());
 
   useEffect(() => { loadPlan(); }, []);
 
@@ -20,6 +21,21 @@ export default function NutritionPage() {
       setPlan(data);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function logMeal(meal: any) {
+    try {
+      await api.post('/nutrition/log', {
+        mealName: meal.name,
+        calories: meal.calories,
+        proteinG: meal.proteinG,
+        carbsG: meal.carbsG,
+        fatG: meal.fatG,
+      });
+      setLoggedMeals((prev) => new Set([...prev, meal.id]));
+    } catch {
+      // silently fail — user can retry
     }
   }
 
@@ -109,6 +125,21 @@ export default function NutritionPage() {
 
                 {expanded === meal.id && (
                   <div className="border-t border-gray-100 p-5 space-y-3">
+                    {/* Log meal button */}
+                    <div className="pb-1">
+                      {loggedMeals.has(meal.id) ? (
+                        <span className="inline-flex items-center gap-1.5 text-sm text-green-700 font-medium">
+                          <CheckCircle size={15} className="text-green-600" /> Registrado!
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => logMeal(meal)}
+                          className="inline-flex items-center gap-1.5 text-sm bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg font-medium transition-colors"
+                        >
+                          <CheckCircle size={14} /> Registrar refeição
+                        </button>
+                      )}
+                    </div>
                     {meal.foods?.map((food: any) => (
                       <div key={food.id} className="flex items-start justify-between p-3 bg-gray-50 rounded-xl">
                         <div>

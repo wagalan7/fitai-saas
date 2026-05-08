@@ -33,14 +33,19 @@ export class AgentsService {
   }
 
   async buildContext(userId: string, agentType: AgentType): Promise<string> {
-    const [profile, memories, recentProgress] = await Promise.all([
+    const needsEvaluatorMemories = agentType === AgentType.TRAINER || agentType === AgentType.NUTRITIONIST;
+
+    const [profile, memories, recentProgress, evaluatorMemories] = await Promise.all([
       this.prisma.userProfile.findUnique({ where: { userId } }),
-      this.memoryService.getRelevantMemories(userId, agentType, 10),
+      this.memoryService.getRelevantMemories(userId, agentType, needsEvaluatorMemories ? 8 : 10),
       this.prisma.progressLog.findMany({
         where: { userId },
         orderBy: { loggedAt: 'desc' },
         take: 3,
       }),
+      needsEvaluatorMemories
+        ? this.memoryService.getRelevantMemories(userId, AgentType.EVALUATOR, 3)
+        : Promise.resolve([]),
     ]);
 
     const parts: string[] = [];
@@ -65,6 +70,13 @@ export class AgentsService {
       parts.push(`
 === MEMÓRIAS RELEVANTES ===
 ${memories.map((m) => `[${m.type}] ${m.content}`).join('\n')}
+`);
+    }
+
+    if (needsEvaluatorMemories && evaluatorMemories.length > 0) {
+      parts.push(`
+=== AVALIAÇÃO CORPORAL (Dr. Shape) ===
+${evaluatorMemories.map((m) => `[${m.type}] ${m.content}`).join('\n')}
 `);
     }
 

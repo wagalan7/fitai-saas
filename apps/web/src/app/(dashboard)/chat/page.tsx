@@ -126,6 +126,7 @@ function MessageContent({ content, agentType, streaming }: { content: string; ag
 function ChatPageInner() {
   const searchParams = useSearchParams();
   const defaultAgent = (searchParams.get('agent') as AgentType) || 'TRAINER';
+  const fromDrShape = searchParams.get('from') === 'drshape';
 
   const [activeAgent, setActiveAgent] = useState<AgentType>(defaultAgent);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -136,6 +137,8 @@ function ChatPageInner() {
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const autoSentRef = useRef(false);
+  const pendingAutoSend = useRef<{ sessionId: string; agent: AgentType } | null>(null);
   const { token } = useAuthStore();
   const socket = useSocket(token);
 
@@ -148,11 +151,32 @@ function ChatPageInner() {
     setMessages([{ role: 'assistant', content: AGENTS[agent].welcome }]);
     setSelectedImage(null);
     setImagePreview(null);
+
+    if (fromDrShape && !autoSentRef.current) {
+      autoSentRef.current = true;
+      const autoMessage = 'Com base na minha avaliação corporal mais recente do Dr. Shape, por favor ajuste meu plano para focar nas áreas indicadas para melhoria.';
+      setMessages((prev) => [...prev, { role: 'user', content: autoMessage }]);
+      if (socket) {
+        socket.emit('message', { sessionId: data.id, agentType: agent, content: autoMessage });
+      } else {
+        // Socket not ready yet — store for sending once socket connects
+        pendingAutoSend.current = { sessionId: data.id, agent };
+      }
+    }
   }
 
   useEffect(() => {
     startNewSession(activeAgent);
   }, [activeAgent]);
+
+  // Flush pending auto-send once socket connects
+  useEffect(() => {
+    if (!socket || !pendingAutoSend.current) return;
+    const { sessionId: sid, agent } = pendingAutoSend.current;
+    pendingAutoSend.current = null;
+    const autoMessage = 'Com base na minha avaliação corporal mais recente do Dr. Shape, por favor ajuste meu plano para focar nas áreas indicadas para melhoria.';
+    socket.emit('message', { sessionId: sid, agentType: agent, content: autoMessage });
+  }, [socket]);
 
   useEffect(() => {
     if (!socket) return;
@@ -384,6 +408,22 @@ function ChatPageInner() {
                       ❌ Erro ao salvar
                     </span>
                   )}
+                </div>
+              )}
+              {msg.role === 'assistant' && activeAgent === 'EVALUATOR' && !msg.streaming && msg.content.length > 100 && (
+                <div className="ml-9 mt-1 flex gap-2 flex-wrap">
+                  <Link
+                    href="/chat?agent=TRAINER&from=drshape"
+                    className="inline-flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors font-medium"
+                  >
+                    <Dumbbell size={12} /> Ajustar Treino
+                  </Link>
+                  <Link
+                    href="/chat?agent=NUTRITIONIST&from=drshape"
+                    className="inline-flex items-center gap-1.5 text-xs bg-gray-700 hover:bg-gray-800 text-white px-3 py-1.5 rounded-lg transition-colors font-medium"
+                  >
+                    <Salad size={12} /> Ajustar Dieta
+                  </Link>
                 </div>
               )}
             </motion.div>

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play } from 'lucide-react';
+import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play, CheckCircle, Star } from 'lucide-react';
 
 const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -12,6 +12,9 @@ export default function WorkoutsPage() {
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
+  const [loggingSessionId, setLoggingSessionId] = useState<string | null>(null);
+  const [logForm, setLogForm] = useState<{ duration: string; rating: number; notes: string }>({ duration: '', rating: 0, notes: '' });
+  const [logSuccess, setLogSuccess] = useState<string | null>(null);
 
   useEffect(() => {
     loadPlan();
@@ -24,6 +27,22 @@ export default function WorkoutsPage() {
       setPlan(data);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function logWorkout(sessionId: string) {
+    try {
+      await api.post('/workouts/log', {
+        workoutSessionId: sessionId,
+        durationMinutes: parseInt(logForm.duration) || undefined,
+        rating: logForm.rating || undefined,
+        notes: logForm.notes || undefined,
+      });
+      setLogSuccess(sessionId);
+      setLoggingSessionId(null);
+      setLogForm({ duration: '', rating: 0, notes: '' });
+    } catch {
+      // silently fail — user can retry
     }
   }
 
@@ -130,6 +149,80 @@ export default function WorkoutsPage() {
 
                 {expandedSession === session.id && (
                   <div className="border-t border-gray-100 p-5">
+                    {/* Log workout trigger button */}
+                    <div className="mb-4">
+                      {logSuccess === session.id ? (
+                        <span className="inline-flex items-center gap-1.5 text-sm text-green-700 font-medium">
+                          <CheckCircle size={16} className="text-green-600" /> Treino registrado!
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => {
+                            setLoggingSessionId(loggingSessionId === session.id ? null : session.id);
+                            setLogForm({ duration: '', rating: 0, notes: '' });
+                          }}
+                          className="inline-flex items-center gap-1.5 text-sm bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg font-medium transition-colors"
+                        >
+                          <CheckCircle size={14} /> Registrar treino
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Log form */}
+                    {loggingSessionId === session.id && (
+                      <div className="mt-2 mb-4 p-4 bg-green-50 rounded-xl border border-green-200 space-y-3">
+                        <p className="text-sm font-semibold text-green-800">Registrar conclusão</p>
+                        <div>
+                          <label className="text-xs text-green-700 font-medium block mb-1">Duração (minutos)</label>
+                          <input
+                            type="number"
+                            value={logForm.duration}
+                            onChange={(e) => setLogForm((f) => ({ ...f, duration: e.target.value }))}
+                            placeholder="Ex: 60"
+                            className="w-full border border-green-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-xs text-green-700 font-medium block mb-1">Avaliação</label>
+                          <div className="flex gap-1">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <button
+                                key={star}
+                                onClick={() => setLogForm((f) => ({ ...f, rating: star }))}
+                                className="text-yellow-400 hover:scale-110 transition-transform"
+                              >
+                                <Star size={20} fill={logForm.rating >= star ? 'currentColor' : 'none'} />
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs text-green-700 font-medium block mb-1">Observações</label>
+                          <textarea
+                            value={logForm.notes}
+                            onChange={(e) => setLogForm((f) => ({ ...f, notes: e.target.value }))}
+                            placeholder="Como foi o treino?"
+                            rows={2}
+                            className="w-full border border-green-200 rounded-lg px-3 py-2 text-sm bg-white resize-none focus:outline-none focus:ring-2 focus:ring-green-400"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => setLoggingSessionId(null)}
+                            className="flex-1 border border-gray-300 text-gray-600 hover:bg-gray-50 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={() => logWorkout(session.id)}
+                            className="flex-1 bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+                          >
+                            Confirmar treino
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="space-y-3">
                       {session.exercises?.map((ex: any) => (
                         <div
