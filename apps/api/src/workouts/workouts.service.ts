@@ -102,6 +102,24 @@ export class WorkoutsService {
       }>;
     },
   ) {
+    // Prevent duplicate: upsert by session + today's date
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const existing = await this.prisma.workoutLog.findFirst({
+      where: { userId, workoutSessionId, completedAt: { gte: todayStart } },
+    });
+    if (existing) {
+      return this.prisma.workoutLog.update({
+        where: { id: existing.id },
+        data: {
+          durationMinutes: data.durationMinutes ?? existing.durationMinutes,
+          rating: data.rating ?? existing.rating,
+          notes: data.notes ?? existing.notes,
+        },
+        include: { exerciseLogs: { include: { sets: true } } },
+      });
+    }
+
     return this.prisma.workoutLog.create({
       data: {
         userId,
@@ -126,6 +144,17 @@ export class WorkoutsService {
       },
       include: { exerciseLogs: { include: { sets: true } } },
     });
+  }
+
+  // Returns { sessionId -> logId } for today's logs — used by frontend to show delete button
+  async getTodayLogs(userId: string): Promise<Record<string, string>> {
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const logs = await this.prisma.workoutLog.findMany({
+      where: { userId, completedAt: { gte: todayStart } },
+      select: { id: true, workoutSessionId: true },
+    });
+    return Object.fromEntries(logs.map((l) => [l.workoutSessionId, l.id]));
   }
 
   async getWorkoutHistory(userId: string, limit = 20) {

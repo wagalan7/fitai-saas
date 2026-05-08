@@ -24,8 +24,14 @@ export default function WorkoutsPage() {
   async function loadPlan() {
     setLoading(true);
     try {
-      const { data } = await api.get('/workouts/plan');
-      setPlan(data);
+      const [planRes, logsRes] = await Promise.all([
+        api.get('/workouts/plan'),
+        api.get('/workouts/today-logs'),
+      ]);
+      setPlan(planRes.data);
+      if (logsRes.data && typeof logsRes.data === 'object') {
+        setLogSuccess(logsRes.data); // { sessionId: logId }
+      }
     } finally {
       setLoading(false);
     }

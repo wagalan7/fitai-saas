@@ -40,6 +40,11 @@ export class WorkoutsController {
     return this.workoutsService.logWorkout(req.user.id, body.workoutSessionId, body);
   }
 
+  @Get('today-logs')
+  getTodayLogs(@Req() req: { user: { id: string } }) {
+    return this.workoutsService.getTodayLogs(req.user.id);
+  }
+
   @Get('history')
   getHistory(@Req() req: { user: { id: string } }) {
     return this.workoutsService.getWorkoutHistory(req.user.id);
