@@ -246,6 +246,7 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
   }
 
   async generateWorkoutPlan(userId: string) {
+    console.log(`[generateWorkoutPlan] start userId=${userId} model=${MODEL}`);
     const context = await this.buildContext(userId, AgentType.TRAINER);
 
     const model = this.genAI.getGenerativeModel({
@@ -259,10 +260,12 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
     );
 
     const text = this.safeResponseText(result.response);
+    console.log(`[generateWorkoutPlan] response length=${text.length} preview=${text.slice(0, 100)}`);
     return this.extractJson(text);
   }
 
   async generateNutritionPlan(userId: string) {
+    console.log(`[generateNutritionPlan] start userId=${userId} model=${MODEL}`);
     const context = await this.buildContext(userId, AgentType.NUTRITIONIST);
 
     const model = this.genAI.getGenerativeModel({
@@ -276,6 +279,7 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
     );
 
     const text = this.safeResponseText(result.response);
+    console.log(`[generateNutritionPlan] response length=${text.length} preview=${text.slice(0, 100)}`);
     return this.extractJson(text);
   }
 
