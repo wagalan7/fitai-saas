@@ -51,8 +51,14 @@ export class AgentsService {
     const parts: string[] = [];
 
     if (profile) {
+      const genderLabel = profile.genderIdentity === 'MALE' ? 'Masculino'
+        : profile.genderIdentity === 'FEMALE' ? 'Feminino'
+        : profile.genderIdentity === 'OTHER' ? 'Outro'
+        : 'Não informado';
+
       parts.push(`
 === PERFIL DO USUÁRIO ===
+- Sexo: ${genderLabel}
 - Idade: ${profile.age} anos
 - Peso atual: ${profile.weightKg}kg | Altura: ${profile.heightCm}cm
 - IMC: ${(profile.weightKg / Math.pow(profile.heightCm / 100, 2)).toFixed(1)}
@@ -173,10 +179,11 @@ Responda APENAS com JSON válido neste formato exato:
   }]
 }
 Inferir valores faltantes com base em boas práticas. Sem markdown, apenas JSON puro.`,
+      generationConfig: { responseMimeType: 'application/json' },
     });
 
     const result = await model.generateContent(`Converta este plano de treino para JSON:\n\n${text}`);
-    const raw = result.response.text();
+    const raw = this.safeResponseText(result.response);
     return this.extractJson(raw);
   }
 
@@ -209,10 +216,11 @@ Responda APENAS com JSON válido neste formato exato:
   }]
 }
 Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JSON puro.`,
+      generationConfig: { responseMimeType: 'application/json' },
     });
 
     const result = await model.generateContent(`Converta este plano alimentar para JSON:\n\n${text}`);
-    const raw = result.response.text();
+    const raw = this.safeResponseText(result.response);
     return this.extractJson(raw);
   }
 
@@ -243,13 +251,14 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
     const model = this.genAI.getGenerativeModel({
       model: MODEL,
       systemInstruction: WORKOUT_GENERATION_PROMPT,
+      generationConfig: { responseMimeType: 'application/json' },
     });
 
     const result = await model.generateContent(
-      `${context}\n\nCrie um plano de treino semanal completo e personalizado para este usuário. Responda APENAS com o JSON, sem nenhum texto antes ou depois.`,
+      `${context}\n\nCrie um plano de treino semanal completo e personalizado para este usuário. Responda APENAS com o JSON.`,
     );
 
-    const text = result.response.text();
+    const text = this.safeResponseText(result.response);
     return this.extractJson(text);
   }
 
@@ -259,13 +268,26 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
     const model = this.genAI.getGenerativeModel({
       model: MODEL,
       systemInstruction: NUTRITION_GENERATION_PROMPT,
+      generationConfig: { responseMimeType: 'application/json' },
     });
 
     const result = await model.generateContent(
-      `${context}\n\nCrie um plano alimentar diário completo e personalizado para este usuário. Responda APENAS com o JSON, sem nenhum texto antes ou depois.`,
+      `${context}\n\nCrie um plano alimentar diário completo e personalizado para este usuário. Responda APENAS com o JSON.`,
     );
 
-    const text = result.response.text();
+    const text = this.safeResponseText(result.response);
     return this.extractJson(text);
+  }
+
+  private safeResponseText(response: any): string {
+    try {
+      return response.text();
+    } catch (e) {
+      const candidate = response?.candidates?.[0];
+      const finishReason = candidate?.finishReason;
+      const parts = candidate?.content?.parts;
+      if (parts?.length > 0) return parts.map((p: any) => p.text || '').join('');
+      throw new Error(`Gemini blocked response (finishReason: ${finishReason}): ${JSON.stringify(candidate?.safetyRatings)}`);
+    }
   }
 }

@@ -1,4 +1,10 @@
 export const WORKOUT_GENERATION_PROMPT = `Você é um personal trainer especializado. Crie um plano de treino semanal personalizado.
+
+IMPORTANTE — adapte o plano ao sexo biológico do usuário:
+- Masculino: maior ênfase em hipertrofia de membros superiores (peito, ombros, bíceps), maior volume e carga progressiva, menos mobilidade obrigatória.
+- Feminino: maior ênfase em membros inferiores e glúteos, treinos funcionais, mais exercícios de isolamento de glúteo, hip thrust, afundo e agachamento variações. Considere variações de carga menor com mais repetições para tom muscular.
+- Outro/não informado: plano equilibrado e funcional.
+
 Responda APENAS com JSON válido, sem markdown, sem texto adicional, seguindo exatamente este formato:
 {
   "name": "Nome do plano",
@@ -20,6 +26,12 @@ Responda APENAS com JSON válido, sem markdown, sem texto adicional, seguindo ex
 }`;
 
 export const NUTRITION_GENERATION_PROMPT = `Você é uma nutricionista esportiva especializada. Crie um plano alimentar diário personalizado.
+
+IMPORTANTE — adapte o plano ao sexo biológico do usuário:
+- Masculino: maior ingestão calórica e proteica, foco em recuperação muscular e testosterona (zinco, gorduras saudáveis), refeições maiores.
+- Feminino: atenção ao ferro (fontes heme e não-heme), ácido fólico, cálcio. Controle calórico mais cuidadoso, refeições menores e mais frequentes. Considere variações hormonais (preferir carboidratos complexos).
+- Outro/não informado: plano equilibrado e saudável.
+
 Responda APENAS com JSON válido, sem markdown, sem texto adicional, seguindo exatamente este formato:
 {
   "calories": 2200,

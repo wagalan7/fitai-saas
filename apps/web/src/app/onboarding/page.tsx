@@ -18,6 +18,18 @@ const STEPS = [
     ],
   },
   {
+    id: 'gender',
+    title: 'Qual é o seu sexo biológico?',
+    subtitle: 'Essencial para personalizar treino e nutrição corretamente',
+    type: 'choice',
+    key: 'genderIdentity',
+    options: [
+      { value: 'MALE', label: '♂️ Masculino', desc: 'Treino e dieta adaptados ao organismo masculino' },
+      { value: 'FEMALE', label: '♀️ Feminino', desc: 'Treino e dieta adaptados ao organismo feminino' },
+      { value: 'OTHER', label: '⚧️ Outro / Prefiro não informar', desc: 'Plano equilibrado e personalizado' },
+    ],
+  },
+  {
     id: 'goal',
     title: 'Qual é o seu objetivo?',
     subtitle: 'Isso define toda a sua estratégia',
