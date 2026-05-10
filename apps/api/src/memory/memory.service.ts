@@ -7,8 +7,14 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 export class MemoryService {
   private genAI: GoogleGenerativeAI;
 
+  private readonly REQUEST_OPTIONS = { apiVersion: 'v1' as const };
+
   constructor(private prisma: PrismaService) {
     this.genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
+  }
+
+  private getModel(params: Parameters<GoogleGenerativeAI['getGenerativeModel']>[0]) {
+    return this.genAI.getGenerativeModel(params, this.REQUEST_OPTIONS);
   }
 
   async saveMemory(
@@ -41,7 +47,7 @@ export class MemoryService {
     assistantReply: string,
   ) {
     try {
-      const model = this.genAI.getGenerativeModel({
+      const model = this.getModel({
         model: 'gemini-1.5-flash',
         systemInstruction: `Você extrai memórias relevantes de conversas. Retorne APENAS JSON válido:
 {"memories":[{"type":"FACT|PREFERENCE|PROGRESS|INSIGHT","content":"texto","importance":0.1-1.0}]}
@@ -82,7 +88,7 @@ Extraia apenas informações genuinamente úteis para personalizar futuras inter
 
     if (oldMemories.length < 10) return;
 
-    const model = this.genAI.getGenerativeModel({
+    const model = this.getModel({
       model: 'gemini-1.5-flash',
       systemInstruction: 'Crie um resumo conciso das memórias, mantendo apenas o essencial.',
     });

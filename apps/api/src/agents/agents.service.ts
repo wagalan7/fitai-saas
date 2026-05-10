@@ -25,11 +25,18 @@ const MODEL = 'gemini-1.5-flash';
 export class AgentsService {
   private genAI: GoogleGenerativeAI;
 
+  // Use stable v1 endpoint — gemini-1.5-flash is not available on v1beta
+  private readonly REQUEST_OPTIONS = { apiVersion: 'v1' as const };
+
   constructor(
     private prisma: PrismaService,
     private memoryService: MemoryService,
   ) {
     this.genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
+  }
+
+  private getModel(params: Parameters<GoogleGenerativeAI['getGenerativeModel']>[0]) {
+    return this.genAI.getGenerativeModel(params, this.REQUEST_OPTIONS);
   }
 
   async buildContext(userId: string, agentType: AgentType): Promise<string> {
@@ -109,7 +116,7 @@ ${recentProgress
     const context = await this.buildContext(userId, agentType);
     const systemPrompt = SYSTEM_PROMPTS[agentType];
 
-    const model = this.genAI.getGenerativeModel({
+    const model = this.getModel({
       model: MODEL,
       systemInstruction: systemPrompt + (context ? `\n\n${context}` : ''),
     });
@@ -156,7 +163,7 @@ ${recentProgress
   }
 
   async extractWorkoutFromText(text: string): Promise<any> {
-    const model = this.genAI.getGenerativeModel({
+    const model = this.getModel({
       model: MODEL,
       systemInstruction: `Você recebe a descrição de um plano de treino em texto e deve convertê-la para JSON estruturado.
 Responda APENAS com JSON válido neste formato exato:
@@ -188,7 +195,7 @@ Inferir valores faltantes com base em boas práticas. Sem markdown, apenas JSON 
   }
 
   async extractNutritionFromText(text: string): Promise<any> {
-    const model = this.genAI.getGenerativeModel({
+    const model = this.getModel({
       model: MODEL,
       systemInstruction: `Você recebe a descrição de um plano alimentar em texto e deve convertê-la para JSON estruturado.
 Responda APENAS com JSON válido neste formato exato:
@@ -249,7 +256,7 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
     console.log(`[generateWorkoutPlan] start userId=${userId} model=${MODEL}`);
     const context = await this.buildContext(userId, AgentType.TRAINER);
 
-    const model = this.genAI.getGenerativeModel({
+    const model = this.getModel({
       model: MODEL,
       systemInstruction: WORKOUT_GENERATION_PROMPT,
       generationConfig: { responseMimeType: 'application/json' },
@@ -268,7 +275,7 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
     console.log(`[generateNutritionPlan] start userId=${userId} model=${MODEL}`);
     const context = await this.buildContext(userId, AgentType.NUTRITIONIST);
 
-    const model = this.genAI.getGenerativeModel({
+    const model = this.getModel({
       model: MODEL,
       systemInstruction: NUTRITION_GENERATION_PROMPT,
       generationConfig: { responseMimeType: 'application/json' },
