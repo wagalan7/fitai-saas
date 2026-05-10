@@ -19,14 +19,11 @@ const SYSTEM_PROMPTS: Record<AgentType, string> = {
   SYSTEM: '',
 };
 
-const MODEL = 'gemini-1.5-flash';
+const MODEL = 'gemini-1.5-flash-latest';
 
 @Injectable()
 export class AgentsService {
   private genAI: GoogleGenerativeAI;
-
-  // Use stable v1 endpoint — gemini-1.5-flash is not available on v1beta
-  private readonly REQUEST_OPTIONS = { apiVersion: 'v1' as const };
 
   constructor(
     private prisma: PrismaService,
@@ -36,7 +33,7 @@ export class AgentsService {
   }
 
   private getModel(params: Parameters<GoogleGenerativeAI['getGenerativeModel']>[0]) {
-    return this.genAI.getGenerativeModel(params, this.REQUEST_OPTIONS);
+    return this.genAI.getGenerativeModel(params);
   }
 
   async buildContext(userId: string, agentType: AgentType): Promise<string> {
@@ -186,7 +183,6 @@ Responda APENAS com JSON válido neste formato exato:
   }]
 }
 Inferir valores faltantes com base em boas práticas. Sem markdown, apenas JSON puro.`,
-      generationConfig: { responseMimeType: 'application/json' },
     });
 
     const result = await model.generateContent(`Converta este plano de treino para JSON:\n\n${text}`);
@@ -223,7 +219,6 @@ Responda APENAS com JSON válido neste formato exato:
   }]
 }
 Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JSON puro.`,
-      generationConfig: { responseMimeType: 'application/json' },
     });
 
     const result = await model.generateContent(`Converta este plano alimentar para JSON:\n\n${text}`);
@@ -259,7 +254,6 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
     const model = this.getModel({
       model: MODEL,
       systemInstruction: WORKOUT_GENERATION_PROMPT,
-      generationConfig: { responseMimeType: 'application/json' },
     });
 
     const result = await model.generateContent(
@@ -278,7 +272,6 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
     const model = this.getModel({
       model: MODEL,
       systemInstruction: NUTRITION_GENERATION_PROMPT,
-      generationConfig: { responseMimeType: 'application/json' },
     });
 
     const result = await model.generateContent(

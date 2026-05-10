@@ -7,14 +7,12 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 export class MemoryService {
   private genAI: GoogleGenerativeAI;
 
-  private readonly REQUEST_OPTIONS = { apiVersion: 'v1' as const };
-
   constructor(private prisma: PrismaService) {
     this.genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
   }
 
   private getModel(params: Parameters<GoogleGenerativeAI['getGenerativeModel']>[0]) {
-    return this.genAI.getGenerativeModel(params, this.REQUEST_OPTIONS);
+    return this.genAI.getGenerativeModel(params);
   }
 
   async saveMemory(
