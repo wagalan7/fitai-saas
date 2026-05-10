@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI, Part } from '@google/generative-ai';
 import { AgentType } from '@prisma/client';
 import { TRAINER_SYSTEM_PROMPT } from './prompts/trainer.prompt';
 import { NUTRITIONIST_SYSTEM_PROMPT } from './prompts/nutritionist.prompt';
@@ -19,17 +19,17 @@ const SYSTEM_PROMPTS: Record<AgentType, string> = {
   SYSTEM: '',
 };
 
-const MODEL = 'claude-sonnet-4-6';
+const MODEL = 'gemini-1.5-flash';
 
 @Injectable()
 export class AgentsService {
-  private anthropic: Anthropic;
+  private genAI: GoogleGenerativeAI;
 
   constructor(
     private prisma: PrismaService,
     private memoryService: MemoryService,
   ) {
-    this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    this.genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
   }
 
   async buildContext(userId: string, agentType: AgentType): Promise<string> {
@@ -95,27 +95,64 @@ ${recentProgress
     return parts.join('\n');
   }
 
-  async streamChat(
+  async *streamChat(
     userId: string,
     agentType: AgentType,
     messages: Array<{ role: 'user' | 'assistant'; content: string | Array<any> }>,
-  ) {
+  ): AsyncGenerator<string> {
     const context = await this.buildContext(userId, agentType);
     const systemPrompt = SYSTEM_PROMPTS[agentType];
 
-    return this.anthropic.messages.stream({
+    const model = this.genAI.getGenerativeModel({
       model: MODEL,
-      max_tokens: 2000,
-      system: systemPrompt + (context ? `\n\n${context}` : ''),
-      messages,
+      systemInstruction: systemPrompt + (context ? `\n\n${context}` : ''),
+    });
+
+    // Convert history (all messages except the last one) to Gemini format
+    const historyMessages = messages.slice(0, -1);
+    const history = historyMessages.map((m) => ({
+      role: m.role === 'user' ? 'user' : 'model',
+      parts: this.convertContentToParts(m.content),
+    }));
+
+    const chat = model.startChat({ history });
+
+    // Build parts for the last (current) message
+    const lastMsg = messages[messages.length - 1];
+    const lastParts = this.convertContentToParts(lastMsg.content);
+
+    const result = await chat.sendMessageStream(lastParts);
+    for await (const chunk of result.stream) {
+      const text = chunk.text();
+      if (text) yield text;
+    }
+  }
+
+  private convertContentToParts(content: string | Array<any>): Part[] {
+    if (typeof content === 'string') {
+      return [{ text: content }];
+    }
+    return content.map((c: any) => {
+      if (c.type === 'text') {
+        return { text: c.text } as Part;
+      }
+      if (c.type === 'image') {
+        // Anthropic format: source.media_type, source.data
+        return {
+          inlineData: {
+            mimeType: c.source?.media_type || c.mimeType || 'image/jpeg',
+            data: c.source?.data || c.data || '',
+          },
+        } as Part;
+      }
+      return { text: '' } as Part;
     });
   }
 
   async extractWorkoutFromText(text: string): Promise<any> {
-    const response = await this.anthropic.messages.create({
-      model: 'claude-haiku-4-5',
-      max_tokens: 4000,
-      system: `Você recebe a descrição de um plano de treino em texto e deve convertê-la para JSON estruturado.
+    const model = this.genAI.getGenerativeModel({
+      model: MODEL,
+      systemInstruction: `Você recebe a descrição de um plano de treino em texto e deve convertê-la para JSON estruturado.
 Responda APENAS com JSON válido neste formato exato:
 {
   "name": "Nome do plano",
@@ -136,17 +173,17 @@ Responda APENAS com JSON válido neste formato exato:
   }]
 }
 Inferir valores faltantes com base em boas práticas. Sem markdown, apenas JSON puro.`,
-      messages: [{ role: 'user', content: `Converta este plano de treino para JSON:\n\n${text}` }],
     });
-    const raw = response.content[0].type === 'text' ? response.content[0].text : '{}';
+
+    const result = await model.generateContent(`Converta este plano de treino para JSON:\n\n${text}`);
+    const raw = result.response.text();
     return this.extractJson(raw);
   }
 
   async extractNutritionFromText(text: string): Promise<any> {
-    const response = await this.anthropic.messages.create({
-      model: 'claude-haiku-4-5',
-      max_tokens: 4000,
-      system: `Você recebe a descrição de um plano alimentar em texto e deve convertê-la para JSON estruturado.
+    const model = this.genAI.getGenerativeModel({
+      model: MODEL,
+      systemInstruction: `Você recebe a descrição de um plano alimentar em texto e deve convertê-la para JSON estruturado.
 Responda APENAS com JSON válido neste formato exato:
 {
   "calories": 2200,
@@ -172,9 +209,10 @@ Responda APENAS com JSON válido neste formato exato:
   }]
 }
 Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JSON puro.`,
-      messages: [{ role: 'user', content: `Converta este plano alimentar para JSON:\n\n${text}` }],
     });
-    const raw = response.content[0].type === 'text' ? response.content[0].text : '{}';
+
+    const result = await model.generateContent(`Converta este plano alimentar para JSON:\n\n${text}`);
+    const raw = result.response.text();
     return this.extractJson(raw);
   }
 
@@ -202,38 +240,32 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
   async generateWorkoutPlan(userId: string) {
     const context = await this.buildContext(userId, AgentType.TRAINER);
 
-    const response = await this.anthropic.messages.create({
+    const model = this.genAI.getGenerativeModel({
       model: MODEL,
-      max_tokens: 8000,
-      system: WORKOUT_GENERATION_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: `${context}\n\nCrie um plano de treino semanal completo e personalizado para este usuário. Responda APENAS com o JSON, sem nenhum texto antes ou depois.`,
-        },
-      ],
+      systemInstruction: WORKOUT_GENERATION_PROMPT,
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
+    const result = await model.generateContent(
+      `${context}\n\nCrie um plano de treino semanal completo e personalizado para este usuário. Responda APENAS com o JSON, sem nenhum texto antes ou depois.`,
+    );
+
+    const text = result.response.text();
     return this.extractJson(text);
   }
 
   async generateNutritionPlan(userId: string) {
     const context = await this.buildContext(userId, AgentType.NUTRITIONIST);
 
-    const response = await this.anthropic.messages.create({
+    const model = this.genAI.getGenerativeModel({
       model: MODEL,
-      max_tokens: 8000,
-      system: NUTRITION_GENERATION_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: `${context}\n\nCrie um plano alimentar diário completo e personalizado para este usuário. Responda APENAS com o JSON, sem nenhum texto antes ou depois.`,
-        },
-      ],
+      systemInstruction: NUTRITION_GENERATION_PROMPT,
     });
 
-    const text = response.content[0].type === 'text' ? response.content[0].text : '{}';
+    const result = await model.generateContent(
+      `${context}\n\nCrie um plano alimentar diário completo e personalizado para este usuário. Responda APENAS com o JSON, sem nenhum texto antes ou depois.`,
+    );
+
+    const text = result.response.text();
     return this.extractJson(text);
   }
 }

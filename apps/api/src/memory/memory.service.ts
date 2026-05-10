@@ -1,14 +1,14 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { AgentType, MemoryType } from '@prisma/client';
-import Anthropic from '@anthropic-ai/sdk';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 
 @Injectable()
 export class MemoryService {
-  private anthropic: Anthropic;
+  private genAI: GoogleGenerativeAI;
 
   constructor(private prisma: PrismaService) {
-    this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    this.genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
   }
 
   async saveMemory(
@@ -41,27 +41,24 @@ export class MemoryService {
     assistantReply: string,
   ) {
     try {
-      const response = await this.anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 500,
-        system: `Você extrai memórias relevantes de conversas. Retorne APENAS JSON válido:
+      const model = this.genAI.getGenerativeModel({
+        model: 'gemini-1.5-flash',
+        systemInstruction: `Você extrai memórias relevantes de conversas. Retorne APENAS JSON válido:
 {"memories":[{"type":"FACT|PREFERENCE|PROGRESS|INSIGHT","content":"texto","importance":0.1-1.0}]}
 Extraia apenas informações genuinamente úteis para personalizar futuras interações.`,
-        messages: [
-          {
-            role: 'user',
-            content: `Usuário: "${userMessage}"\nAssistente: "${assistantReply.substring(0, 300)}"`,
-          },
-        ],
       });
 
-      const text = response.content[0].type === 'text' ? response.content[0].text : '{"memories":[]}';
-      const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const result = JSON.parse(clean);
+      const result = await model.generateContent(
+        `Usuário: "${userMessage}"\nAssistente: "${assistantReply.substring(0, 300)}"`,
+      );
 
-      if (result.memories?.length > 0) {
+      const text = result.response.text();
+      const clean = text.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(clean);
+
+      if (parsed.memories?.length > 0) {
         await Promise.all(
-          result.memories.map((m: { type: string; content: string; importance: number }) =>
+          parsed.memories.map((m: { type: string; content: string; importance: number }) =>
             this.saveMemory(userId, agentType, m.type as MemoryType, m.content, m.importance),
           ),
         );
@@ -85,14 +82,16 @@ Extraia apenas informações genuinamente úteis para personalizar futuras inter
 
     if (oldMemories.length < 10) return;
 
-    const response = await this.anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 500,
-      system: 'Crie um resumo conciso das memórias, mantendo apenas o essencial.',
-      messages: [{ role: 'user', content: oldMemories.map((m) => `[${m.type}] ${m.content}`).join('\n') }],
+    const model = this.genAI.getGenerativeModel({
+      model: 'gemini-1.5-flash',
+      systemInstruction: 'Crie um resumo conciso das memórias, mantendo apenas o essencial.',
     });
 
-    const summary = response.content[0].type === 'text' ? response.content[0].text : '';
+    const result = await model.generateContent(
+      oldMemories.map((m) => `[${m.type}] ${m.content}`).join('\n'),
+    );
+
+    const summary = result.response.text();
 
     await this.prisma.$transaction([
       this.prisma.memory.deleteMany({ where: { id: { in: oldMemories.map((m) => m.id) } } }),

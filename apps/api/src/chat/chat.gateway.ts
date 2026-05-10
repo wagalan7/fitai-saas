@@ -97,17 +97,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     let fullReply = '';
 
     try {
-      const stream = await this.agentsService.streamChat(userId, agentType, messages);
+      const stream = this.agentsService.streamChat(userId, agentType, messages);
 
-      for await (const event of stream) {
-        if (
-          event.type === 'content_block_delta' &&
-          event.delta.type === 'text_delta'
-        ) {
-          const delta = event.delta.text;
-          fullReply += delta;
-          client.emit('stream:chunk', { sessionId, delta });
-        }
+      for await (const delta of stream) {
+        fullReply += delta;
+        client.emit('stream:chunk', { sessionId, delta });
       }
 
       client.emit('stream:end', { sessionId });
