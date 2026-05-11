@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { setUser, setToken } = useAuthStore();
+  const { setUser, setToken, setRefreshToken } = useAuthStore();
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -21,6 +21,7 @@ export default function RegisterPage() {
     try {
       const { data } = await api.post('/auth/register', form);
       setToken(data.accessToken);
+      if (data.refreshToken) setRefreshToken(data.refreshToken);
       setUser(data.user);
       router.push('/onboarding');
     } catch (err: any) {

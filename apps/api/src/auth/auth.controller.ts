@@ -21,7 +21,7 @@ export class AuthController {
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.register(dto);
     this.setRefreshCookie(res, result.refreshToken);
-    return { accessToken: result.accessToken, user: result.user };
+    return { accessToken: result.accessToken, refreshToken: result.refreshToken, user: result.user };
   }
 
   @Post('login')
@@ -29,23 +29,24 @@ export class AuthController {
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.login(dto);
     this.setRefreshCookie(res, result.refreshToken);
-    return { accessToken: result.accessToken, user: result.user };
+    return { accessToken: result.accessToken, refreshToken: result.refreshToken, user: result.user };
   }
 
   @Post('refresh')
   @HttpCode(200)
-  async refresh(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const token = req.cookies['refresh_token'];
+  async refresh(@Req() req: Request, @Body() body: any, @Res({ passthrough: true }) res: Response) {
+    // Accept token from body (localStorage-based) or cookie (fallback)
+    const token = body?.refreshToken || req.cookies['refresh_token'];
     const result = await this.authService.refresh(token);
     this.setRefreshCookie(res, result.refreshToken);
-    return { accessToken: result.accessToken, user: result.user };
+    return { accessToken: result.accessToken, refreshToken: result.refreshToken, user: result.user };
   }
 
   @Post('logout')
   @HttpCode(200)
   @UseGuards(JwtAuthGuard)
-  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const token = req.cookies['refresh_token'];
+  async logout(@Req() req: Request, @Body() body: any, @Res({ passthrough: true }) res: Response) {
+    const token = body?.refreshToken || req.cookies['refresh_token'];
     await this.authService.logout(token);
     res.clearCookie('refresh_token');
     return { message: 'Logged out' };

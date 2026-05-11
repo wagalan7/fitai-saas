@@ -57,7 +57,8 @@ export class AuthService {
     });
   }
 
-  async refresh(refreshToken: string) {
+  async refresh(refreshToken: string | undefined) {
+    if (!refreshToken) throw new UnauthorizedException('No refresh token provided');
     const session = await this.prisma.session.findUnique({
       where: { refreshToken },
       include: { user: { select: { id: true, email: true, name: true, role: true, isActive: true } } },
