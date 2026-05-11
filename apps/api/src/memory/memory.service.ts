@@ -3,7 +3,7 @@ import { PrismaService } from '../common/prisma.service';
 import { AgentType, MemoryType } from '@prisma/client';
 import Groq from 'groq-sdk';
 
-const MEMORY_MODEL = 'llama3-8b-8192';
+const MEMORY_MODEL = 'llama-3.1-8b-instant';
 
 @Injectable()
 export class MemoryService {
