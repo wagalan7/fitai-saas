@@ -19,7 +19,7 @@ const SYSTEM_PROMPTS: Record<AgentType, string> = {
   SYSTEM: '',
 };
 
-const MODEL = 'gemini-2.0-flash-lite';
+const MODEL = 'gemini-2.5-flash';
 
 @Injectable()
 export class AgentsService {

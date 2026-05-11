@@ -46,7 +46,7 @@ export class MemoryService {
   ) {
     try {
       const model = this.getModel({
-        model: 'gemini-2.0-flash-lite',
+        model: 'gemini-2.5-flash',
         systemInstruction: `Você extrai memórias relevantes de conversas. Retorne APENAS JSON válido:
 {"memories":[{"type":"FACT|PREFERENCE|PROGRESS|INSIGHT","content":"texto","importance":0.1-1.0}]}
 Extraia apenas informações genuinamente úteis para personalizar futuras interações.`,
@@ -87,7 +87,7 @@ Extraia apenas informações genuinamente úteis para personalizar futuras inter
     if (oldMemories.length < 10) return;
 
     const model = this.getModel({
-      model: 'gemini-2.0-flash-lite',
+      model: 'gemini-2.5-flash',
       systemInstruction: 'Crie um resumo conciso das memórias, mantendo apenas o essencial.',
     });
 
