@@ -11,6 +11,7 @@ export class WorkoutsService {
 
   async generatePlan(userId: string) {
     const planData = await this.agentsService.generateWorkoutPlan(userId);
+    console.log('[generatePlan] sessions count:', planData?.sessions?.length, 'first session:', JSON.stringify(planData?.sessions?.[0]?.exercises?.[0]));
 
     // Deactivate existing plans
     await this.prisma.workoutPlan.updateMany({
@@ -18,32 +19,37 @@ export class WorkoutsService {
       data: { isActive: false },
     });
 
-    return this.prisma.workoutPlan.create({
-      data: {
-        userId,
-        name: planData.name || 'Plano Personalizado',
-        description: planData.description,
-        sessions: {
-          create: (planData.sessions || []).map((session: any) => ({
-            dayOfWeek: session.dayOfWeek,
-            name: session.name,
-            muscleGroups: session.muscleGroups || [],
-            estimatedTime: session.estimatedTime || 60,
-            exercises: {
-              create: (session.exercises || []).map((ex: any) => ({
-                order: ex.order,
-                name: ex.name,
-                sets: ex.sets,
-                reps: ex.reps,
-                restSeconds: ex.restSeconds,
-                notes: ex.notes,
-              })),
-            },
-          })),
+    try {
+      return await this.prisma.workoutPlan.create({
+        data: {
+          userId,
+          name: planData.name || 'Plano Personalizado',
+          description: planData.description,
+          sessions: {
+            create: (planData.sessions || []).map((session: any) => ({
+              dayOfWeek: Number(session.dayOfWeek) || 1,
+              name: session.name,
+              muscleGroups: session.muscleGroups || [],
+              estimatedTime: Number(session.estimatedTime) || 60,
+              exercises: {
+                create: (session.exercises || []).map((ex: any) => ({
+                  order: Number(ex.order) || 1,
+                  name: ex.name,
+                  sets: Number(ex.sets) || 3,
+                  reps: String(ex.reps),
+                  restSeconds: Number(ex.restSeconds) || 60,
+                  notes: ex.notes || null,
+                })),
+              },
+            })),
+          },
         },
-      },
-      include: { sessions: { include: { exercises: true } } },
-    });
+        include: { sessions: { include: { exercises: true } } },
+      });
+    } catch (err) {
+      console.error('[generatePlan] Prisma error:', err);
+      throw err;
+    }
   }
 
   async savePlanFromText(userId: string, text: string) {
