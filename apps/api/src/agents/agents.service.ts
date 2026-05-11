@@ -19,7 +19,7 @@ const SYSTEM_PROMPTS: Record<AgentType, string> = {
   SYSTEM: '',
 };
 
-const MODEL = 'gemini-2.5-flash';
+const MODEL = 'gemini-flash-latest';
 
 @Injectable()
 export class AgentsService {
@@ -34,6 +34,25 @@ export class AgentsService {
 
   private getModel(params: Parameters<GoogleGenerativeAI['getGenerativeModel']>[0]) {
     return this.genAI.getGenerativeModel(params);
+  }
+
+  private async withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 2000): Promise<T> {
+    for (let i = 0; i < retries; i++) {
+      try {
+        return await fn();
+      } catch (err: any) {
+        const msg = err?.message || '';
+        const is503 = msg.includes('503') || msg.includes('Service Unavailable') || msg.includes('high demand');
+        if (is503 && i < retries - 1) {
+          console.log(`[retry] 503 on attempt ${i + 1}, retrying in ${delayMs}ms...`);
+          await new Promise((r) => setTimeout(r, delayMs));
+          delayMs *= 2;
+        } else {
+          throw err;
+        }
+      }
+    }
+    throw new Error('Max retries exceeded');
   }
 
   async buildContext(userId: string, agentType: AgentType): Promise<string> {
@@ -256,9 +275,9 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
       systemInstruction: WORKOUT_GENERATION_PROMPT,
     });
 
-    const result = await model.generateContent(
+    const result = await this.withRetry(() => model.generateContent(
       `${context}\n\nCrie um plano de treino semanal completo e personalizado para este usuário. Responda APENAS com o JSON.`,
-    );
+    ));
 
     const text = this.safeResponseText(result.response);
     console.log(`[generateWorkoutPlan] response length=${text.length} preview=${text.slice(0, 100)}`);
@@ -274,9 +293,9 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
       systemInstruction: NUTRITION_GENERATION_PROMPT,
     });
 
-    const result = await model.generateContent(
+    const result = await this.withRetry(() => model.generateContent(
       `${context}\n\nCrie um plano alimentar diário completo e personalizado para este usuário. Responda APENAS com o JSON.`,
-    );
+    ));
 
     const text = this.safeResponseText(result.response);
     console.log(`[generateNutritionPlan] response length=${text.length} preview=${text.slice(0, 100)}`);
