@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { GoogleGenerativeAI, Part } from '@google/generative-ai';
+import Groq from 'groq-sdk';
 import { AgentType } from '@prisma/client';
 import { TRAINER_SYSTEM_PROMPT } from './prompts/trainer.prompt';
 import { NUTRITIONIST_SYSTEM_PROMPT } from './prompts/nutritionist.prompt';
@@ -19,21 +19,18 @@ const SYSTEM_PROMPTS: Record<AgentType, string> = {
   SYSTEM: '',
 };
 
-const MODEL = 'gemini-flash-latest';
+const MODEL = 'llama-3.3-70b-versatile';
+const VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 @Injectable()
 export class AgentsService {
-  private genAI: GoogleGenerativeAI;
+  private groq: Groq;
 
   constructor(
     private prisma: PrismaService,
     private memoryService: MemoryService,
   ) {
-    this.genAI = new GoogleGenerativeAI(process.env.GOOGLE_API_KEY!);
-  }
-
-  private getModel(params: Parameters<GoogleGenerativeAI['getGenerativeModel']>[0]) {
-    return this.genAI.getGenerativeModel(params);
+    this.groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
   }
 
   private async withRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 2000): Promise<T> {
@@ -42,9 +39,9 @@ export class AgentsService {
         return await fn();
       } catch (err: any) {
         const msg = err?.message || '';
-        const is503 = msg.includes('503') || msg.includes('Service Unavailable') || msg.includes('high demand');
-        if (is503 && i < retries - 1) {
-          console.log(`[retry] 503 on attempt ${i + 1}, retrying in ${delayMs}ms...`);
+        const isRetryable = msg.includes('503') || msg.includes('529') || msg.includes('rate') || msg.includes('overloaded');
+        if (isRetryable && i < retries - 1) {
+          console.log(`[retry] attempt ${i + 1} failed, retrying in ${delayMs}ms...`);
           await new Promise((r) => setTimeout(r, delayMs));
           delayMs *= 2;
         } else {
@@ -132,56 +129,62 @@ ${recentProgress
     const context = await this.buildContext(userId, agentType);
     const systemPrompt = SYSTEM_PROMPTS[agentType];
 
-    const model = this.getModel({
-      model: MODEL,
-      systemInstruction: systemPrompt + (context ? `\n\n${context}` : ''),
+    // Detect if any message has images
+    const hasImages = messages.some(
+      (m) => Array.isArray(m.content) && m.content.some((c: any) => c.type === 'image'),
+    );
+    const model = hasImages ? VISION_MODEL : MODEL;
+
+    const groqMessages: Groq.Chat.ChatCompletionMessageParam[] = [
+      {
+        role: 'system',
+        content: systemPrompt + (context ? `\n\n${context}` : ''),
+      },
+      ...messages.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: this.convertContent(m.content),
+      })),
+    ];
+
+    const stream = await this.groq.chat.completions.create({
+      model,
+      messages: groqMessages,
+      stream: true,
+      max_tokens: 2048,
     });
 
-    // Convert history (all messages except the last one) to Gemini format
-    const historyMessages = messages.slice(0, -1);
-    const history = historyMessages.map((m) => ({
-      role: m.role === 'user' ? 'user' : 'model',
-      parts: this.convertContentToParts(m.content),
-    }));
-
-    const chat = model.startChat({ history });
-
-    // Build parts for the last (current) message
-    const lastMsg = messages[messages.length - 1];
-    const lastParts = this.convertContentToParts(lastMsg.content);
-
-    const result = await chat.sendMessageStream(lastParts);
-    for await (const chunk of result.stream) {
-      const text = chunk.text();
+    for await (const chunk of stream) {
+      const text = chunk.choices[0]?.delta?.content || '';
       if (text) yield text;
     }
   }
 
-  private convertContentToParts(content: string | Array<any>): Part[] {
-    if (typeof content === 'string') {
-      return [{ text: content }];
-    }
-    return content.map((c: any) => {
+  private convertContent(content: string | Array<any>): any {
+    if (typeof content === 'string') return content;
+
+    const parts: any[] = [];
+    for (const c of content) {
       if (c.type === 'text') {
-        return { text: c.text } as Part;
+        parts.push({ type: 'text', text: c.text });
+      } else if (c.type === 'image') {
+        const mimeType = c.source?.media_type || c.mimeType || 'image/jpeg';
+        const data = c.source?.data || c.data || '';
+        parts.push({
+          type: 'image_url',
+          image_url: { url: `data:${mimeType};base64,${data}` },
+        });
       }
-      if (c.type === 'image') {
-        // Anthropic format: source.media_type, source.data
-        return {
-          inlineData: {
-            mimeType: c.source?.media_type || c.mimeType || 'image/jpeg',
-            data: c.source?.data || c.data || '',
-          },
-        } as Part;
-      }
-      return { text: '' } as Part;
-    });
+    }
+    return parts;
   }
 
   async extractWorkoutFromText(text: string): Promise<any> {
-    const model = this.getModel({
+    const completion = await this.groq.chat.completions.create({
       model: MODEL,
-      systemInstruction: `Você recebe a descrição de um plano de treino em texto e deve convertê-la para JSON estruturado.
+      messages: [
+        {
+          role: 'system',
+          content: `Você recebe a descrição de um plano de treino em texto e deve convertê-la para JSON estruturado.
 Responda APENAS com JSON válido neste formato exato:
 {
   "name": "Nome do plano",
@@ -202,17 +205,23 @@ Responda APENAS com JSON válido neste formato exato:
   }]
 }
 Inferir valores faltantes com base em boas práticas. Sem markdown, apenas JSON puro.`,
+        },
+        { role: 'user', content: `Converta este plano de treino para JSON:\n\n${text}` },
+      ],
+      max_tokens: 4096,
     });
 
-    const result = await model.generateContent(`Converta este plano de treino para JSON:\n\n${text}`);
-    const raw = this.safeResponseText(result.response);
+    const raw = completion.choices[0]?.message?.content || '';
     return this.extractJson(raw);
   }
 
   async extractNutritionFromText(text: string): Promise<any> {
-    const model = this.getModel({
+    const completion = await this.groq.chat.completions.create({
       model: MODEL,
-      systemInstruction: `Você recebe a descrição de um plano alimentar em texto e deve convertê-la para JSON estruturado.
+      messages: [
+        {
+          role: 'system',
+          content: `Você recebe a descrição de um plano alimentar em texto e deve convertê-la para JSON estruturado.
 Responda APENAS com JSON válido neste formato exato:
 {
   "calories": 2200,
@@ -238,21 +247,21 @@ Responda APENAS com JSON válido neste formato exato:
   }]
 }
 Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JSON puro.`,
+        },
+        { role: 'user', content: `Converta este plano alimentar para JSON:\n\n${text}` },
+      ],
+      max_tokens: 4096,
     });
 
-    const result = await model.generateContent(`Converta este plano alimentar para JSON:\n\n${text}`);
-    const raw = this.safeResponseText(result.response);
+    const raw = completion.choices[0]?.message?.content || '';
     return this.extractJson(raw);
   }
 
   private extractJson(text: string): any {
-    // Strip markdown code fences
     let clean = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
-    // Try direct parse first
     try {
       return JSON.parse(clean);
     } catch {
-      // Find the first { or [ and last } or ]
       const start = clean.search(/[\[{]/);
       const end = Math.max(clean.lastIndexOf('}'), clean.lastIndexOf(']'));
       if (start !== -1 && end !== -1 && end > start) {
@@ -270,16 +279,21 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
     console.log(`[generateWorkoutPlan] start userId=${userId} model=${MODEL}`);
     const context = await this.buildContext(userId, AgentType.TRAINER);
 
-    const model = this.getModel({
-      model: MODEL,
-      systemInstruction: WORKOUT_GENERATION_PROMPT,
-    });
+    const completion = await this.withRetry(() =>
+      this.groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: 'system', content: WORKOUT_GENERATION_PROMPT },
+          {
+            role: 'user',
+            content: `${context}\n\nCrie um plano de treino semanal completo e personalizado para este usuário. Responda APENAS com o JSON.`,
+          },
+        ],
+        max_tokens: 4096,
+      }),
+    );
 
-    const result = await this.withRetry(() => model.generateContent(
-      `${context}\n\nCrie um plano de treino semanal completo e personalizado para este usuário. Responda APENAS com o JSON.`,
-    ));
-
-    const text = this.safeResponseText(result.response);
+    const text = completion.choices[0]?.message?.content || '';
     console.log(`[generateWorkoutPlan] response length=${text.length} preview=${text.slice(0, 100)}`);
     return this.extractJson(text);
   }
@@ -288,29 +302,22 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
     console.log(`[generateNutritionPlan] start userId=${userId} model=${MODEL}`);
     const context = await this.buildContext(userId, AgentType.NUTRITIONIST);
 
-    const model = this.getModel({
-      model: MODEL,
-      systemInstruction: NUTRITION_GENERATION_PROMPT,
-    });
+    const completion = await this.withRetry(() =>
+      this.groq.chat.completions.create({
+        model: MODEL,
+        messages: [
+          { role: 'system', content: NUTRITION_GENERATION_PROMPT },
+          {
+            role: 'user',
+            content: `${context}\n\nCrie um plano alimentar diário completo e personalizado para este usuário. Responda APENAS com o JSON.`,
+          },
+        ],
+        max_tokens: 4096,
+      }),
+    );
 
-    const result = await this.withRetry(() => model.generateContent(
-      `${context}\n\nCrie um plano alimentar diário completo e personalizado para este usuário. Responda APENAS com o JSON.`,
-    ));
-
-    const text = this.safeResponseText(result.response);
+    const text = completion.choices[0]?.message?.content || '';
     console.log(`[generateNutritionPlan] response length=${text.length} preview=${text.slice(0, 100)}`);
     return this.extractJson(text);
-  }
-
-  private safeResponseText(response: any): string {
-    try {
-      return response.text();
-    } catch (e) {
-      const candidate = response?.candidates?.[0];
-      const finishReason = candidate?.finishReason;
-      const parts = candidate?.content?.parts;
-      if (parts?.length > 0) return parts.map((p: any) => p.text || '').join('');
-      throw new Error(`Gemini blocked response (finishReason: ${finishReason}): ${JSON.stringify(candidate?.safetyRatings)}`);
-    }
   }
 }
