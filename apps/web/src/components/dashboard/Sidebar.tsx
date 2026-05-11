@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Dumbbell, LayoutDashboard, MessageSquare, Salad, TrendingUp, LogOut, Camera, X, Menu } from 'lucide-react';
+import { Dumbbell, LayoutDashboard, MessageSquare, Salad, TrendingUp, LogOut, Camera, X, Menu, User } from 'lucide-react';
 import { useAuthStore } from '@/store/auth.store';
 import { api } from '@/lib/api';
 import { useRouter } from 'next/navigation';
@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { href: '/nutrition', icon: Salad, label: 'Nutrição' },
   { href: '/progress', icon: TrendingUp, label: 'Progresso' },
   { href: '/chat?agent=EVALUATOR', icon: Camera, label: 'Dr. Shape' },
+  { href: '/profile', icon: User, label: 'Perfil' },
 ];
 
 const BOTTOM_NAV = [

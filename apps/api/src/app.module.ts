@@ -12,6 +12,7 @@ import { ChatModule } from './chat/chat.module';
 import { MemoryModule } from './memory/memory.module';
 import { ProgressModule } from './progress/progress.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { ProfileModule } from './profile/profile.module';
 import { DatabaseModule } from './common/database.module';
 
 @Module({
@@ -30,6 +31,7 @@ import { DatabaseModule } from './common/database.module';
     MemoryModule,
     ProgressModule,
     DashboardModule,
+    ProfileModule,
   ],
 })
 export class AppModule {}

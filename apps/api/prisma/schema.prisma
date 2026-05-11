@@ -57,12 +57,17 @@ model Session {
 model UserProfile {
   id                 String         @id @default(cuid())
   userId             String         @unique
-  age                Int
-  weightKg           Float
-  heightCm           Float
+  // Mandatory profile fields
+  cpf                String?
+  phone              String?
+  address            String?
+  // Fitness profile
+  age                Int            @default(0)
+  weightKg           Float          @default(0)
+  heightCm           Float          @default(0)
   genderIdentity     String?
-  fitnessGoal        FitnessGoal
-  fitnessLevel       FitnessLevel
+  fitnessGoal        FitnessGoal    @default(GENERAL_FITNESS)
+  fitnessLevel       FitnessLevel   @default(BEGINNER)
   workoutsPerWeek    Int            @default(3)
   workoutDuration    Int            @default(60)
   injuries           String[]
