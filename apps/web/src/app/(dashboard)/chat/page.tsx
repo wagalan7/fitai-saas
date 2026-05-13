@@ -52,6 +52,7 @@ interface ChatMessage {
   imagePreview?: string;
   streaming?: boolean;
   savedPlan?: 'saving' | 'saved' | 'error';
+  saveError?: string;
 }
 
 // Render markdown-like formatting inline
@@ -248,7 +249,7 @@ function ChatPageInner() {
 
     setMessages((prev) => {
       const updated = [...prev];
-      updated[index] = { ...updated[index], savedPlan: 'saving' };
+      updated[index] = { ...updated[index], savedPlan: 'saving', saveError: undefined };
       return updated;
     });
 
@@ -263,10 +264,12 @@ function ChatPageInner() {
         updated[index] = { ...updated[index], savedPlan: 'saved' };
         return updated;
       });
-    } catch {
+    } catch (err: any) {
+      const errMsg = err?.response?.data?.message || err?.message || 'Erro desconhecido';
+      console.error('[savePlan] error:', errMsg, err?.response?.status);
       setMessages((prev) => {
         const updated = [...prev];
-        updated[index] = { ...updated[index], savedPlan: 'error' };
+        updated[index] = { ...updated[index], savedPlan: 'error', saveError: errMsg };
         return updated;
       });
     }
@@ -404,9 +407,13 @@ function ChatPageInner() {
                     </Link>
                   )}
                   {msg.savedPlan === 'error' && (
-                    <span className="text-xs px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-600">
-                      ❌ Erro ao salvar
-                    </span>
+                    <button
+                      onClick={() => savePlan(i)}
+                      title={msg.saveError || 'Erro ao salvar'}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 transition-colors"
+                    >
+                      ❌ Erro ao salvar — clique para tentar novamente
+                    </button>
                   )}
                 </div>
               )}
