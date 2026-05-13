@@ -19,8 +19,9 @@ const SYSTEM_PROMPTS: Record<AgentType, string> = {
   SYSTEM: '',
 };
 
-const CHAT_MODEL = 'llama-3.3-70b-versatile';   // chat streaming — no think tags, Portuguese-native
-const GEN_MODEL = 'qwen/qwen3-32b';              // generation — better JSON instruction following
+const CHAT_MODEL = 'llama-3.3-70b-versatile';      // chat streaming — no think tags, Portuguese-native
+const GEN_MODEL = 'qwen/qwen3-32b';               // plan generation — better JSON instruction following
+const EXTRACT_MODEL = 'llama-3.1-8b-instant';     // text→JSON extraction — 30k TPM limit, fast
 const VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 @Injectable()
@@ -195,36 +196,20 @@ ${recentProgress
   }
 
   async extractWorkoutFromText(text: string): Promise<any> {
+    // Truncate to avoid TPM limits — workout plans are usually in the first 3000 chars
+    const truncated = text.slice(0, 3000);
     const completion = await this.groq.chat.completions.create({
-      model: GEN_MODEL,
+      model: EXTRACT_MODEL,
       messages: [
         {
           role: 'system',
-          content: `Você recebe a descrição de um plano de treino em texto e deve convertê-la para JSON estruturado.
-Responda APENAS com JSON válido neste formato exato:
-{
-  "name": "Nome do plano",
-  "description": "Descrição curta",
-  "sessions": [{
-    "name": "Treino A — Peito e Tríceps",
-    "dayOfWeek": 1,
-    "muscleGroups": ["peito","tríceps"],
-    "estimatedTime": 60,
-    "exercises": [{
-      "order": 1,
-      "name": "Supino Reto",
-      "sets": 4,
-      "reps": "8-12",
-      "restSeconds": 90,
-      "notes": "dica opcional"
-    }]
-  }]
-}
-Inferir valores faltantes com base em boas práticas. Sem markdown, apenas JSON puro.`,
+          content: `Converta a descrição de treino para JSON. Responda APENAS com JSON, sem markdown:
+{"name":"Nome","description":"Desc","sessions":[{"name":"Segunda-feira — Peito","dayOfWeek":1,"muscleGroups":["peito"],"estimatedTime":60,"exercises":[{"order":1,"name":"Supino Reto","sets":4,"reps":"8-12","restSeconds":90,"notes":"dica"}]}]}
+dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
         },
-        { role: 'user', content: `Converta este plano de treino para JSON:\n\n${text}` },
+        { role: 'user', content: truncated },
       ],
-      max_tokens: 4096,
+      max_tokens: 3000,
     });
 
     const raw = completion.choices[0]?.message?.content || '';
@@ -232,41 +217,18 @@ Inferir valores faltantes com base em boas práticas. Sem markdown, apenas JSON 
   }
 
   async extractNutritionFromText(text: string): Promise<any> {
+    const truncated = text.slice(0, 3000);
     const completion = await this.groq.chat.completions.create({
-      model: GEN_MODEL,
+      model: EXTRACT_MODEL,
       messages: [
         {
           role: 'system',
-          content: `Você recebe a descrição de um plano alimentar em texto e deve convertê-la para JSON estruturado.
-Responda APENAS com JSON válido neste formato exato:
-{
-  "calories": 2200,
-  "proteinG": 160,
-  "carbsG": 220,
-  "fatG": 73,
-  "meals": [{
-    "name": "Café da Manhã",
-    "timeOfDay": "breakfast",
-    "calories": 450,
-    "proteinG": 30,
-    "carbsG": 55,
-    "fatG": 10,
-    "foods": [{
-      "name": "Aveia",
-      "quantityG": 80,
-      "calories": 300,
-      "proteinG": 10,
-      "carbsG": 54,
-      "fatG": 6,
-      "alternatives": ["granola"]
-    }]
-  }]
-}
-Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JSON puro.`,
+          content: `Converta a descrição de dieta para JSON. Responda APENAS com JSON, sem markdown:
+{"calories":2200,"proteinG":160,"carbsG":220,"fatG":73,"meals":[{"name":"Café da Manhã","timeOfDay":"breakfast","calories":450,"proteinG":30,"carbsG":55,"fatG":10,"foods":[{"name":"Aveia","quantityG":80,"calories":300,"proteinG":10,"carbsG":54,"fatG":6,"alternatives":["granola"]}]}]}`,
         },
-        { role: 'user', content: `Converta este plano alimentar para JSON:\n\n${text}` },
+        { role: 'user', content: truncated },
       ],
-      max_tokens: 4096,
+      max_tokens: 3000,
     });
 
     const raw = completion.choices[0]?.message?.content || '';
