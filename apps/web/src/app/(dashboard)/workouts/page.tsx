@@ -6,6 +6,18 @@ import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play, CheckCircle, 
 
 const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
+function getDayLabel(session: any): string {
+  const n = (session.name || '').toLowerCase();
+  if (n.includes('segunda')) return 'Seg';
+  if (n.includes('ter')) return 'Ter';
+  if (n.includes('quarta')) return 'Qua';
+  if (n.includes('quinta')) return 'Qui';
+  if (n.includes('sexta')) return 'Sex';
+  if (n.includes('sáb') || n.includes('sab')) return 'Sáb';
+  if (n.includes('dom')) return 'Dom';
+  return DAYS[session.dayOfWeek % 7] ?? '?';
+}
+
 export default function WorkoutsPage() {
   const [plan, setPlan] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -152,7 +164,7 @@ export default function WorkoutsPage() {
                   className="w-full flex items-center gap-4 p-5 text-left hover:bg-gray-50 transition-colors"
                 >
                   <div className="w-12 h-12 bg-primary-100 rounded-xl flex items-center justify-center flex-shrink-0">
-                    <span className="text-primary-600 font-bold text-sm">{DAYS[session.dayOfWeek]}</span>
+                    <span className="text-primary-600 font-bold text-sm">{getDayLabel(session)}</span>
                   </div>
                   <div className="flex-1">
                     <p className="font-semibold text-gray-900">{session.name}</p>
