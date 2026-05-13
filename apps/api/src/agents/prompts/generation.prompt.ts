@@ -9,6 +9,17 @@ REGRA CRÍTICA — convenção de dayOfWeek (OBRIGATÓRIO seguir exatamente):
 0 = Domingo | 1 = Segunda-feira | 2 = Terça-feira | 3 = Quarta-feira | 4 = Quinta-feira | 5 = Sexta-feira | 6 = Sábado
 O nome da sessão DEVE mencionar o dia correto. Exemplo: se dayOfWeek=2, o nome deve conter "Terça-feira".
 
+REGRA ABSOLUTA — use APENAS exercícios reais e reconhecidos pela musculação e fisioterapia. Exemplos corretos:
+- Peito: Supino Reto, Supino Inclinado, Supino Declinado, Crucifixo, Flexão de Braço, Crossover
+- Costas: Remada Curvada, Puxada Frontal, Puxada Fechada, Remada Serrote, Levantamento Terra, Pull-up
+- Ombros: Desenvolvimento com Halteres, Desenvolvimento com Barra, Elevação Lateral, Elevação Frontal, Face Pull
+- Bíceps: Rosca Direta, Rosca Alternada, Rosca Martelo, Rosca Concentrada, Rosca Scott
+- Tríceps: Tríceps Testa, Tríceps Pulley, Mergulho entre Bancos, Tríceps Francês, Kickback
+- Pernas: Agachamento Livre, Leg Press, Extensão de Pernas, Flexão de Pernas (Femoral), Stiff, Cadeira Abdutora, Hip Thrust, Afundo, Passada, Panturrilha em Pé
+- Glúteos: Hip Thrust, Elevação Pélvica, Agachamento Sumo, Afundo Búlgaro, Abdução de Quadril
+- Abdômen: Abdominal Crunch, Prancha, Elevação de Pernas, Russian Twist, Abdominal Bicicleta
+NUNCA invente combinações inexistentes como "Supino de Perna", "Rosca de Joelho" ou similares.
+
 Responda APENAS com JSON válido, sem markdown, sem texto adicional:
 {
   "name": "Nome do plano",
@@ -22,7 +33,7 @@ Responda APENAS com JSON válido, sem markdown, sem texto adicional:
       "exercises": [
         {
           "order": 1,
-          "name": "Nome do exercício",
+          "name": "Supino Reto",
           "sets": 4,
           "reps": "8-12",
           "restSeconds": 90,
