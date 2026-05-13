@@ -19,7 +19,7 @@ const SYSTEM_PROMPTS: Record<AgentType, string> = {
   SYSTEM: '',
 };
 
-const MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
+const MODEL = 'qwen/qwen3-32b';
 const VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 @Injectable()

@@ -9,23 +9,47 @@ export class WorkoutsService {
     private agentsService: AgentsService,
   ) {}
 
+  // Words that cannot appear together — catches hallucinated combos
+  private static INVALID_COMBOS = [
+    ['supino', 'perna'], ['supino', 'joelho'], ['supino', 'glúteo'],
+    ['rosca', 'perna'], ['rosca', 'joelho'], ['rosca', 'quadrícep'],
+    ['desenvolvimento', 'perna'], ['leg', 'bícep'], ['leg', 'trícep'],
+  ];
+
+  private sanitizeExerciseName(name: string): string {
+    const lower = name.toLowerCase();
+    for (const [a, b] of WorkoutsService.INVALID_COMBOS) {
+      if (lower.includes(a) && lower.includes(b)) {
+        console.warn(`[sanitize] Invalid exercise detected: "${name}" — skipping`);
+        return null as any; // mark for removal
+      }
+    }
+    return name;
+  }
+
   private buildPlanSessions(sessions: any[]) {
-    return (sessions || []).map((session: any) => ({
-      dayOfWeek: Number(session.dayOfWeek) ?? 1,
-      name: session.name,
-      muscleGroups: session.muscleGroups || [],
-      estimatedTime: Number(session.estimatedTime) || 60,
-      exercises: {
-        create: (session.exercises || []).map((ex: any) => ({
-          order: Number(ex.order) || 1,
-          name: ex.name,
-          sets: Number(ex.sets) || 3,
-          reps: String(ex.reps),
-          restSeconds: Number(ex.restSeconds) || 60,
-          notes: ex.notes || null,
-        })),
-      },
-    }));
+    return (sessions || []).map((session: any) => {
+      const validExercises = (session.exercises || [])
+        .map((ex: any) => ({ ...ex, name: this.sanitizeExerciseName(ex.name) }))
+        .filter((ex: any) => ex.name !== null);
+
+      return {
+        dayOfWeek: Number(session.dayOfWeek) ?? 1,
+        name: session.name,
+        muscleGroups: session.muscleGroups || [],
+        estimatedTime: Number(session.estimatedTime) || 60,
+        exercises: {
+          create: validExercises.map((ex: any, i: number) => ({
+            order: Number(ex.order) || i + 1,
+            name: ex.name,
+            sets: Number(ex.sets) || 3,
+            reps: String(ex.reps),
+            restSeconds: Number(ex.restSeconds) || 60,
+            notes: ex.notes || null,
+          })),
+        },
+      };
+    });
   }
 
   private activePlanInclude = {
