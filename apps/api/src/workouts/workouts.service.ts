@@ -35,46 +35,52 @@ export class WorkoutsService {
     },
   };
 
+  private async replacePlan(userId: string, planData: any, source: string) {
+    console.log(`[replacePlan] userId=${userId} source=${source} sessions=${planData?.sessions?.length}`);
+
+    // Step 1: deactivate all existing active plans
+    const deactivated = await this.prisma.workoutPlan.updateMany({
+      where: { userId, isActive: true },
+      data: { isActive: false },
+    });
+    console.log(`[replacePlan] deactivated ${deactivated.count} plans`);
+
+    // Step 2: create the new plan explicitly with isActive: true
+    const newPlan = await this.prisma.workoutPlan.create({
+      data: {
+        userId,
+        isActive: true,
+        name: planData.name || (source === 'chat' ? 'Plano do Chat' : 'Plano Personalizado'),
+        description: planData.description,
+        sessions: { create: this.buildPlanSessions(planData.sessions) },
+      },
+      include: this.activePlanInclude,
+    });
+    console.log(`[replacePlan] created plan id=${newPlan.id} sessions=${newPlan.sessions?.length}`);
+    return newPlan;
+  }
+
   async generatePlan(userId: string) {
     const planData = await this.agentsService.generateWorkoutPlan(userId);
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.workoutPlan.updateMany({ where: { userId, isActive: true }, data: { isActive: false } });
-      return tx.workoutPlan.create({
-        data: {
-          userId,
-          name: planData.name || 'Plano Personalizado',
-          description: planData.description,
-          sessions: { create: this.buildPlanSessions(planData.sessions) },
-        },
-        include: this.activePlanInclude,
-      });
-    });
+    return this.replacePlan(userId, planData, 'generate');
   }
 
   async savePlanFromText(userId: string, text: string) {
+    console.log(`[savePlanFromText] userId=${userId} textLength=${text?.length}`);
     const planData = await this.agentsService.extractWorkoutFromText(text);
-
-    return this.prisma.$transaction(async (tx) => {
-      await tx.workoutPlan.updateMany({ where: { userId, isActive: true }, data: { isActive: false } });
-      return tx.workoutPlan.create({
-        data: {
-          userId,
-          name: planData.name || 'Plano do Chat',
-          description: planData.description,
-          sessions: { create: this.buildPlanSessions(planData.sessions) },
-        },
-        include: this.activePlanInclude,
-      });
-    });
+    console.log(`[savePlanFromText] extracted name="${planData?.name}" sessions=${planData?.sessions?.length}`);
+    return this.replacePlan(userId, planData, 'chat');
   }
 
   async getActivePlan(userId: string) {
-    return this.prisma.workoutPlan.findFirst({
+    const plans = await this.prisma.workoutPlan.findMany({
       where: { userId, isActive: true },
       orderBy: { createdAt: 'desc' },
+      take: 1,
       include: this.activePlanInclude,
     });
+    console.log(`[getActivePlan] userId=${userId} found=${plans.length} plan="${plans[0]?.name}"`);
+    return plans[0] ?? null;
   }
 
   async logWorkout(
