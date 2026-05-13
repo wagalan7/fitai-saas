@@ -9,89 +9,71 @@ export class WorkoutsService {
     private agentsService: AgentsService,
   ) {}
 
+  private buildPlanSessions(sessions: any[]) {
+    return (sessions || []).map((session: any) => ({
+      dayOfWeek: Number(session.dayOfWeek) ?? 1,
+      name: session.name,
+      muscleGroups: session.muscleGroups || [],
+      estimatedTime: Number(session.estimatedTime) || 60,
+      exercises: {
+        create: (session.exercises || []).map((ex: any) => ({
+          order: Number(ex.order) || 1,
+          name: ex.name,
+          sets: Number(ex.sets) || 3,
+          reps: String(ex.reps),
+          restSeconds: Number(ex.restSeconds) || 60,
+          notes: ex.notes || null,
+        })),
+      },
+    }));
+  }
+
+  private activePlanInclude = {
+    sessions: {
+      orderBy: { dayOfWeek: 'asc' as const },
+      include: { exercises: { orderBy: { order: 'asc' as const } } },
+    },
+  };
+
   async generatePlan(userId: string) {
     const planData = await this.agentsService.generateWorkoutPlan(userId);
-    console.log('[generatePlan] sessions count:', planData?.sessions?.length, 'first session:', JSON.stringify(planData?.sessions?.[0]?.exercises?.[0]));
 
-    // Deactivate existing plans
-    await this.prisma.workoutPlan.updateMany({
-      where: { userId, isActive: true },
-      data: { isActive: false },
-    });
-
-    try {
-      return await this.prisma.workoutPlan.create({
+    return this.prisma.$transaction(async (tx) => {
+      await tx.workoutPlan.updateMany({ where: { userId, isActive: true }, data: { isActive: false } });
+      return tx.workoutPlan.create({
         data: {
           userId,
           name: planData.name || 'Plano Personalizado',
           description: planData.description,
-          sessions: {
-            create: (planData.sessions || []).map((session: any) => ({
-              dayOfWeek: Number(session.dayOfWeek) || 1,
-              name: session.name,
-              muscleGroups: session.muscleGroups || [],
-              estimatedTime: Number(session.estimatedTime) || 60,
-              exercises: {
-                create: (session.exercises || []).map((ex: any) => ({
-                  order: Number(ex.order) || 1,
-                  name: ex.name,
-                  sets: Number(ex.sets) || 3,
-                  reps: String(ex.reps),
-                  restSeconds: Number(ex.restSeconds) || 60,
-                  notes: ex.notes || null,
-                })),
-              },
-            })),
-          },
+          sessions: { create: this.buildPlanSessions(planData.sessions) },
         },
-        include: { sessions: { include: { exercises: true } } },
+        include: this.activePlanInclude,
       });
-    } catch (err) {
-      console.error('[generatePlan] Prisma error:', err);
-      throw err;
-    }
+    });
   }
 
   async savePlanFromText(userId: string, text: string) {
     const planData = await this.agentsService.extractWorkoutFromText(text);
 
-    await this.prisma.workoutPlan.updateMany({
-      where: { userId, isActive: true },
-      data: { isActive: false },
-    });
-
-    return this.prisma.workoutPlan.create({
-      data: {
-        userId,
-        name: planData.name || 'Plano do Chat',
-        description: planData.description,
-        sessions: {
-          create: (planData.sessions || []).map((session: any) => ({
-            dayOfWeek: session.dayOfWeek ?? 1,
-            name: session.name,
-            muscleGroups: session.muscleGroups || [],
-            estimatedTime: session.estimatedTime || 60,
-            exercises: {
-              create: (session.exercises || []).map((ex: any) => ({
-                order: ex.order,
-                name: ex.name,
-                sets: ex.sets,
-                reps: String(ex.reps),
-                restSeconds: ex.restSeconds,
-                notes: ex.notes,
-              })),
-            },
-          })),
+    return this.prisma.$transaction(async (tx) => {
+      await tx.workoutPlan.updateMany({ where: { userId, isActive: true }, data: { isActive: false } });
+      return tx.workoutPlan.create({
+        data: {
+          userId,
+          name: planData.name || 'Plano do Chat',
+          description: planData.description,
+          sessions: { create: this.buildPlanSessions(planData.sessions) },
         },
-      },
-      include: { sessions: { include: { exercises: true } } },
+        include: this.activePlanInclude,
+      });
     });
   }
 
   async getActivePlan(userId: string) {
     return this.prisma.workoutPlan.findFirst({
       where: { userId, isActive: true },
-      include: { sessions: { include: { exercises: { orderBy: { order: 'asc' } } } } },
+      orderBy: { createdAt: 'desc' },
+      include: this.activePlanInclude,
     });
   }
 

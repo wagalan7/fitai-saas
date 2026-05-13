@@ -157,7 +157,7 @@ export default function WorkoutsPage() {
           </div>
 
           <div className="space-y-3">
-            {plan.sessions?.map((session: any) => (
+            {[...(plan.sessions || [])].sort((a: any, b: any) => a.dayOfWeek - b.dayOfWeek).map((session: any) => (
               <div key={session.id} className="card overflow-hidden">
                 <button
                   onClick={() => setExpandedSession(expandedSession === session.id ? null : session.id)}
