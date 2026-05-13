@@ -19,7 +19,8 @@ const SYSTEM_PROMPTS: Record<AgentType, string> = {
   SYSTEM: '',
 };
 
-const MODEL = 'qwen/qwen3-32b';
+const CHAT_MODEL = 'llama-3.3-70b-versatile';   // chat streaming — no think tags, Portuguese-native
+const GEN_MODEL = 'qwen/qwen3-32b';              // generation — better JSON instruction following
 const VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 @Injectable()
@@ -133,7 +134,7 @@ ${recentProgress
     const hasImages = messages.some(
       (m) => Array.isArray(m.content) && m.content.some((c: any) => c.type === 'image'),
     );
-    const model = hasImages ? VISION_MODEL : MODEL;
+    const model = hasImages ? VISION_MODEL : CHAT_MODEL;
 
     const groqMessages: Groq.Chat.ChatCompletionMessageParam[] = [
       {
@@ -153,10 +154,25 @@ ${recentProgress
       max_tokens: 2048,
     });
 
+    let inThink = false;
+    let thinkBuf = '';
     for await (const chunk of stream) {
       const text = chunk.choices[0]?.delta?.content || '';
-      if (text) yield text;
+      if (!text) continue;
+      // Filter out <think>...</think> blocks in real time
+      let out = '';
+      for (let i = 0; i < text.length; i++) {
+        thinkBuf += text[i];
+        if (!inThink && thinkBuf.endsWith('<think>')) { inThink = true; thinkBuf = ''; continue; }
+        if (inThink && thinkBuf.endsWith('</think>')) { inThink = false; thinkBuf = ''; continue; }
+        if (!inThink && thinkBuf.length > 8) { out += thinkBuf[0]; thinkBuf = thinkBuf.slice(1); }
+      }
+      if (!inThink && thinkBuf && thinkBuf.length > 0 && !thinkBuf.startsWith('<')) {
+        out += thinkBuf; thinkBuf = '';
+      }
+      if (out) yield out;
     }
+    if (!inThink && thinkBuf) yield thinkBuf;
   }
 
   private convertContent(content: string | Array<any>): any {
@@ -180,7 +196,7 @@ ${recentProgress
 
   async extractWorkoutFromText(text: string): Promise<any> {
     const completion = await this.groq.chat.completions.create({
-      model: MODEL,
+      model: GEN_MODEL,
       messages: [
         {
           role: 'system',
@@ -217,7 +233,7 @@ Inferir valores faltantes com base em boas práticas. Sem markdown, apenas JSON 
 
   async extractNutritionFromText(text: string): Promise<any> {
     const completion = await this.groq.chat.completions.create({
-      model: MODEL,
+      model: GEN_MODEL,
       messages: [
         {
           role: 'system',
@@ -257,8 +273,13 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
     return this.extractJson(raw);
   }
 
+  private stripThinkTags(text: string): string {
+    return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  }
+
   private extractJson(text: string): any {
-    let clean = text.replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
+    let clean = this.stripThinkTags(text)
+      .replace(/```json\s*/gi, '').replace(/```\s*/g, '').trim();
     try {
       return JSON.parse(clean);
     } catch {
@@ -276,12 +297,12 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
   }
 
   async generateWorkoutPlan(userId: string) {
-    console.log(`[generateWorkoutPlan] start userId=${userId} model=${MODEL}`);
+    console.log(`[generateWorkoutPlan] start userId=${userId} model=${GEN_MODEL}`);
     const context = await this.buildContext(userId, AgentType.TRAINER);
 
     const completion = await this.withRetry(() =>
       this.groq.chat.completions.create({
-        model: MODEL,
+        model: GEN_MODEL,
         messages: [
           { role: 'system', content: WORKOUT_GENERATION_PROMPT },
           {
@@ -299,12 +320,12 @@ Inferir valores nutricionais com base em boas práticas. Sem markdown, apenas JS
   }
 
   async generateNutritionPlan(userId: string) {
-    console.log(`[generateNutritionPlan] start userId=${userId} model=${MODEL}`);
+    console.log(`[generateNutritionPlan] start userId=${userId} model=${GEN_MODEL}`);
     const context = await this.buildContext(userId, AgentType.NUTRITIONIST);
 
     const completion = await this.withRetry(() =>
       this.groq.chat.completions.create({
-        model: MODEL,
+        model: GEN_MODEL,
         messages: [
           { role: 'system', content: NUTRITION_GENERATION_PROMPT },
           {
