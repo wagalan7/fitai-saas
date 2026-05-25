@@ -13,18 +13,21 @@ import { useAuthStore } from '@/store/auth.store';
 
 type AgentType = 'TRAINER' | 'NUTRITIONIST' | 'COACH' | 'ANALYST' | 'EVALUATOR';
 
-// Detect if an assistant message actually contains a structured plan worth saving
+// Detect if an assistant message actually contains a structured plan worth saving.
+// Requires strong signals: at least 2 days + 2 exercise names, or 2 meals + macro numbers.
 function looksLikePlan(content: string, agentType: AgentType): boolean {
-  const lower = content.toLowerCase();
   if (agentType === 'TRAINER') {
-    const hasDay = /segunda|terça|quarta|quinta|sexta|sábado|domingo/i.test(content);
-    const hasExercise = /séries|repetições|\breps\b|\bsets\b|supino|agachamento|rosca|remada|leg press|stiff|afundo|hip thrust/i.test(content);
-    return hasDay && hasExercise;
+    const days = ['segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado', 'domingo'];
+    const dayCount = days.filter(d => content.toLowerCase().includes(d)).length;
+    const exercises = ['supino', 'agachamento', 'rosca', 'remada', 'leg press', 'stiff', 'afundo', 'hip thrust', 'puxada', 'desenvolvimento', 'tríceps', 'bíceps', 'panturrilha', 'prancha', 'levantamento terra'];
+    const exCount = exercises.filter(e => content.toLowerCase().includes(e)).length;
+    return dayCount >= 2 && exCount >= 2;
   }
   if (agentType === 'NUTRITIONIST') {
-    const hasMeal = /café da manhã|almoço|jantar|lanche|refeição/i.test(content);
-    const hasMacro = /calorias|proteína|carboidrato|gordura|\bkcal\b/i.test(content);
-    return hasMeal && hasMacro;
+    const meals = ['café da manhã', 'almoço', 'jantar', 'lanche', 'pré-treino', 'pós-treino'];
+    const mealCount = meals.filter(m => content.toLowerCase().includes(m)).length;
+    const hasMacro = /\d+\s*g\s*(de\s*)?(proteína|carb|gordura)|\d+\s*kcal/i.test(content);
+    return mealCount >= 2 && hasMacro;
   }
   return false;
 }

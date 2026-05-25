@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { AgentsService } from '../agents/agents.service';
 
@@ -52,7 +52,20 @@ export class NutritionService {
   }
 
   async savePlanFromText(userId: string, text: string) {
-    const planData = await this.agentsService.extractNutritionFromText(text);
+    let planData: any;
+    try {
+      planData = await this.agentsService.extractNutritionFromText(text);
+    } catch (err: any) {
+      throw new BadRequestException(
+        'Não foi possível identificar um plano alimentar nessa mensagem. Peça à Nutricionista para criar um plano com refeições e macros detalhados.',
+      );
+    }
+
+    if (!planData?.meals?.length) {
+      throw new BadRequestException(
+        'O plano extraído está vazio. Peça à Nutricionista para descrever o plano com refeições específicas.',
+      );
+    }
 
     const existing = await this.prisma.nutritionPlan.findUnique({ where: { userId } });
     if (existing) {

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { AgentsService } from '../agents/agents.service';
 
@@ -91,7 +91,22 @@ export class WorkoutsService {
 
   async savePlanFromText(userId: string, text: string) {
     console.log(`[savePlanFromText] userId=${userId} textLength=${text?.length}`);
-    const planData = await this.agentsService.extractWorkoutFromText(text);
+    let planData: any;
+    try {
+      planData = await this.agentsService.extractWorkoutFromText(text);
+    } catch (err: any) {
+      console.warn(`[savePlanFromText] extraction failed: ${err?.message}`);
+      throw new BadRequestException(
+        'Não foi possível identificar um plano de treino nessa mensagem. Peça ao Trainer para criar um plano com dias e exercícios detalhados.',
+      );
+    }
+
+    if (!planData?.sessions?.length) {
+      throw new BadRequestException(
+        'O plano extraído está vazio. Peça ao Trainer para descrever o plano com sessões e exercícios específicos.',
+      );
+    }
+
     console.log(`[savePlanFromText] extracted name="${planData?.name}" sessions=${planData?.sessions?.length}`);
     return this.replacePlan(userId, planData, 'chat');
   }
