@@ -29,6 +29,24 @@ export default function WorkoutsPage() {
   const [logForm, setLogForm] = useState<{ duration: string; rating: number; notes: string }>({ duration: '', rating: 0, notes: '' });
   // maps sessionId → logId (so we can delete)
   const [logSuccess, setLogSuccess] = useState<Record<string, string>>({});
+  const [isOffline, setIsOffline] = useState(false);
+
+  const PLAN_CACHE_KEY = 'fitai-workout-plan-cache';
+
+  function savePlanToCache(plan: any) {
+    try { localStorage.setItem(PLAN_CACHE_KEY, JSON.stringify({ plan, ts: Date.now() })); } catch {}
+  }
+
+  function loadPlanFromCache(): any | null {
+    try {
+      const raw = localStorage.getItem(PLAN_CACHE_KEY);
+      if (!raw) return null;
+      const { plan, ts } = JSON.parse(raw);
+      // Cache válido por 7 dias
+      if (Date.now() - ts > 7 * 24 * 60 * 60 * 1000) return null;
+      return plan;
+    } catch { return null; }
+  }
 
   useEffect(() => {
     loadPlan();
@@ -41,9 +59,18 @@ export default function WorkoutsPage() {
         api.get('/workouts/plan'),
         api.get('/workouts/today-logs'),
       ]);
-      setPlan(planRes.data);
+      const fetchedPlan = planRes.data;
+      setPlan(fetchedPlan);
+      if (fetchedPlan) savePlanToCache(fetchedPlan);  // salva no cache
       if (logsRes.data && typeof logsRes.data === 'object') {
-        setLogSuccess(logsRes.data); // { sessionId: logId }
+        setLogSuccess(logsRes.data);
+      }
+    } catch {
+      // Tenta carregar do cache quando offline
+      const cached = loadPlanFromCache();
+      if (cached) {
+        setPlan(cached);
+        setIsOffline(true);
       }
     } finally {
       setLoading(false);
@@ -89,6 +116,8 @@ export default function WorkoutsPage() {
     try {
       const { data } = await api.post('/workouts/generate');
       setPlan(data);
+      savePlanToCache(data);  // salva no cache
+      setIsOffline(false);    // limpa modo offline
       toast.success('Plano de treino gerado com sucesso!');
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Erro ao gerar plano. Tente novamente.';
@@ -127,6 +156,13 @@ export default function WorkoutsPage() {
       {generateError && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
           {generateError}
+        </div>
+      )}
+
+      {isOffline && (
+        <div className="bg-yellow-50 border border-yellow-200 text-yellow-700 rounded-xl px-4 py-3 text-sm flex items-center gap-2">
+          <span>📡</span>
+          <span>Você está offline — exibindo plano salvo anteriormente. Conecte-se para atualizar.</span>
         </div>
       )}
 
