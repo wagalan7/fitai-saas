@@ -3,7 +3,111 @@
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
-import { User, Phone, MapPin, CreditCard, Calendar, Save, CheckCircle, AlertCircle, Edit3 } from 'lucide-react';
+import { toast } from '@/lib/toast';
+import { User, Phone, MapPin, CreditCard, Calendar, Save, CheckCircle, AlertCircle, Edit3, Brain, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+
+const AGENT_LABELS: Record<string, string> = {
+  TRAINER: '🏋️ Personal Trainer',
+  NUTRITIONIST: '🥗 Nutricionista',
+  COACH: '🧠 Coach',
+  ANALYST: '📊 Analista',
+  EVALUATOR: '📸 Dr. Shape',
+  SYSTEM: '⚙️ Sistema',
+};
+
+const TYPE_COLORS: Record<string, string> = {
+  FACT: 'bg-blue-100 text-blue-700',
+  PREFERENCE: 'bg-purple-100 text-purple-700',
+  PROGRESS: 'bg-green-100 text-green-700',
+  INSIGHT: 'bg-orange-100 text-orange-700',
+  SUMMARY: 'bg-gray-100 text-gray-600',
+};
+
+function MemoriesSection() {
+  const [grouped, setGrouped] = useState<Record<string, any[]> | null>(null);
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    api.get('/profile/memories').then(r => {
+      setGrouped(r.data);
+      // Auto-expand first group
+      const first = Object.keys(r.data)[0];
+      if (first) setExpanded({ [first]: true });
+    }).finally(() => setLoading(false));
+  }, []);
+
+  async function deleteMemory(agentType: string, id: string) {
+    try {
+      await api.delete(`/profile/memories/${id}`);
+      setGrouped(prev => {
+        if (!prev) return prev;
+        const updated = { ...prev };
+        updated[agentType] = updated[agentType].filter(m => m.id !== id);
+        if (updated[agentType].length === 0) delete updated[agentType];
+        return updated;
+      });
+      toast.success('Memória removida.');
+    } catch {
+      toast.error('Erro ao remover memória.');
+    }
+  }
+
+  const totalMemories = grouped ? Object.values(grouped).reduce((acc, arr) => acc + arr.length, 0) : 0;
+
+  return (
+    <div className="card p-6 space-y-4">
+      <div className="flex items-center gap-2">
+        <Brain size={18} className="text-primary-500" />
+        <h2 className="text-base font-semibold text-gray-900">O que seus coaches sabem sobre você</h2>
+        {totalMemories > 0 && (
+          <span className="ml-auto text-xs text-gray-400">{totalMemories} memórias</span>
+        )}
+      </div>
+      <p className="text-xs text-gray-400">Os agentes de IA aprendem com suas conversas para personalizar respostas. Você pode remover memórias que não refletem mais sua realidade.</p>
+
+      {loading && <div className="flex justify-center py-4"><div className="animate-spin w-5 h-5 border-2 border-primary-500 border-t-transparent rounded-full" /></div>}
+
+      {!loading && totalMemories === 0 && (
+        <p className="text-sm text-gray-400 text-center py-4">Nenhuma memória ainda. Converse com os agentes para eles aprenderem sobre você.</p>
+      )}
+
+      {!loading && grouped && Object.entries(grouped).map(([agentType, memories]) => (
+        <div key={agentType} className="border border-gray-100 rounded-xl overflow-hidden">
+          <button
+            onClick={() => setExpanded(p => ({ ...p, [agentType]: !p[agentType] }))}
+            className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+          >
+            <span className="text-sm font-medium text-gray-700">{AGENT_LABELS[agentType] || agentType}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400">{memories.length}</span>
+              {expanded[agentType] ? <ChevronUp size={14} className="text-gray-400" /> : <ChevronDown size={14} className="text-gray-400" />}
+            </div>
+          </button>
+          {expanded[agentType] && (
+            <div className="divide-y divide-gray-50">
+              {memories.map((m: any) => (
+                <div key={m.id} className="flex items-start gap-3 px-4 py-3">
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0 mt-0.5 ${TYPE_COLORS[m.type] || 'bg-gray-100 text-gray-600'}`}>
+                    {m.type}
+                  </span>
+                  <p className="text-sm text-gray-700 flex-1 leading-relaxed">{m.content}</p>
+                  <button
+                    onClick={() => deleteMemory(agentType, m.id)}
+                    className="text-gray-300 hover:text-red-400 transition-colors flex-shrink-0 mt-0.5"
+                    title="Remover memória"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function validateCPF(cpf: string): boolean {
   const c = cpf.replace(/[^\d]/g, '');
@@ -197,6 +301,8 @@ export default function ProfilePage() {
           {saving ? 'Salvando...' : 'Salvar alterações'}
         </button>
       </form>
+
+      <MemoriesSection />
     </div>
   );
 }

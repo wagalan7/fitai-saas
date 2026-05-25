@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
 import { FitnessGoal, FitnessLevel } from '@prisma/client';
 
@@ -57,6 +57,29 @@ export class ProfileService {
     );
 
     return { user, profile, isComplete };
+  }
+
+  async getMemories(userId: string) {
+    const memories = await this.prisma.memory.findMany({
+      where: { userId },
+      orderBy: [{ importance: 'desc' }, { createdAt: 'desc' }],
+      select: { id: true, agentType: true, type: true, content: true, importance: true, createdAt: true },
+    });
+    // Group by agentType
+    const grouped: Record<string, typeof memories> = {};
+    for (const m of memories) {
+      if (!grouped[m.agentType]) grouped[m.agentType] = [];
+      grouped[m.agentType].push(m);
+    }
+    return grouped;
+  }
+
+  async deleteMemory(userId: string, memoryId: string) {
+    const memory = await this.prisma.memory.findUnique({ where: { id: memoryId } });
+    if (!memory) throw new NotFoundException('Memória não encontrada');
+    if (memory.userId !== userId) throw new ForbiddenException();
+    await this.prisma.memory.delete({ where: { id: memoryId } });
+    return { deleted: true };
   }
 
   async updateProfile(userId: string, dto: UpdateProfileDto) {
