@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { toast } from '@/lib/toast';
 import { Salad, RefreshCw, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 
 export default function NutritionPage() {
@@ -34,8 +35,9 @@ export default function NutritionPage() {
         fatG: meal.fatG,
       });
       setLoggedMeals((prev) => new Set([...prev, meal.id]));
-    } catch {
-      // silently fail — user can retry
+      toast.success('Refeição registrada!');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Erro ao registrar refeição. Tente novamente.');
     }
   }
 
@@ -45,8 +47,11 @@ export default function NutritionPage() {
     try {
       const { data } = await api.post('/nutrition/generate');
       setPlan(data);
+      toast.success('Plano alimentar gerado com sucesso!');
     } catch (err: any) {
-      setGenerateError(err?.response?.data?.message || 'Erro ao gerar plano. Tente novamente.');
+      const msg = err?.response?.data?.message || 'Erro ao gerar plano. Tente novamente.';
+      setGenerateError(msg);
+      toast.error(msg);
     } finally {
       setGenerating(false);
     }

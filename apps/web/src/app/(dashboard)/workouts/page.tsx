@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { toast } from '@/lib/toast';
 import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play, CheckCircle, Star, Trash2 } from 'lucide-react';
 
 const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -60,8 +61,9 @@ export default function WorkoutsPage() {
       setLogSuccess((prev) => ({ ...prev, [sessionId]: data.id }));
       setLoggingSessionId(null);
       setLogForm({ duration: '', rating: 0, notes: '' });
-    } catch {
-      // silently fail — user can retry
+      toast.success('Treino registrado com sucesso!');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Erro ao registrar treino. Tente novamente.');
     }
   }
 
@@ -75,8 +77,9 @@ export default function WorkoutsPage() {
         delete updated[sessionId];
         return updated;
       });
-    } catch {
-      // silently fail
+      toast.success('Registro excluído.');
+    } catch (err: any) {
+      toast.error(err?.response?.data?.message || 'Erro ao excluir registro.');
     }
   }
 
@@ -86,8 +89,11 @@ export default function WorkoutsPage() {
     try {
       const { data } = await api.post('/workouts/generate');
       setPlan(data);
+      toast.success('Plano de treino gerado com sucesso!');
     } catch (err: any) {
-      setGenerateError(err?.response?.data?.message || 'Erro ao gerar plano. Tente novamente.');
+      const msg = err?.response?.data?.message || 'Erro ao gerar plano. Tente novamente.';
+      setGenerateError(msg);
+      toast.error(msg);
     } finally {
       setGenerating(false);
     }
