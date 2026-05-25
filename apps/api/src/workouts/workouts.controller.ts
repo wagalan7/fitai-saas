@@ -1,17 +1,20 @@
 import { Controller, Get, Post, Delete, Body, Param, UseGuards, Req, ForbiddenException } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WorkoutsService } from './workouts.service';
 
 @Controller('workouts')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, ThrottlerGuard)
 export class WorkoutsController {
   constructor(private workoutsService: WorkoutsService) {}
 
+  @Throttle({ default: { limit: 5, ttl: 3600000 } })
   @Post('generate')
   generatePlan(@Req() req: { user: { id: string } }) {
     return this.workoutsService.generatePlan(req.user.id);
   }
 
+  @Throttle({ default: { limit: 5, ttl: 3600000 } })
   @Post('save-from-chat')
   savePlanFromChat(
     @Req() req: { user: { id: string } },

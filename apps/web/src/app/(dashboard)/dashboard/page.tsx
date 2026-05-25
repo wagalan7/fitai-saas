@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
-import { Dumbbell, Salad, TrendingUp, Target, Flame, Activity, Camera, Zap, ChevronRight, CheckCircle2 } from 'lucide-react';
+import { Dumbbell, Salad, TrendingUp, Target, Flame, Activity, Camera, Zap, ChevronRight, CheckCircle2, Clock } from 'lucide-react';
 import Link from 'next/link';
 import ProgressChart from '@/components/dashboard/ProgressChart';
 
@@ -17,6 +17,8 @@ interface DashboardData {
   todayNutrition: { calories: number; target: number; meals: any[] };
   calsBurnedToday: number;
   recentChatSessions: any[];
+  streak: number;
+  todaySession: any | null;
 }
 
 const AGENT_LABELS: Record<string, { label: string; color: string }> = {
@@ -91,14 +93,29 @@ export default function DashboardPage() {
           color="bg-orange-50"
         />
         <StatCard
-          icon={<TrendingUp size={20} className="text-purple-500" />}
-          label="Peso atual"
-          value={data?.profile?.weightKg ? `${data.profile.weightKg}kg` : '—'}
-          sub="último registro"
-          color="bg-purple-50"
+          icon={<Flame size={20} className="text-orange-500" />}
+          label="Sequência"
+          value={`${data?.streak || 0}`}
+          sub={data?.streak === 1 ? '1 dia seguido' : `${data?.streak || 0} dias seguidos`}
+          color="bg-orange-50"
           href="/progress"
         />
       </div>
+
+      {/* Today's session */}
+      {data?.todaySession ? (
+        <div className="card p-5 border-l-4 border-primary-500 bg-primary-50">
+          <p className="text-xs font-semibold text-primary-600 uppercase tracking-wide mb-1">Treino de hoje</p>
+          <h3 className="text-lg font-bold text-gray-900">{data.todaySession.name}</h3>
+          <div className="flex items-center gap-3 text-sm text-gray-500 mt-1">
+            <span className="flex items-center gap-1"><Clock size={13} /> {data.todaySession.estimatedTime}min</span>
+            <span>{data.todaySession.muscleGroups?.join(', ')}</span>
+          </div>
+          <Link href="/workouts" className="inline-flex items-center gap-1.5 mt-3 text-sm font-medium text-primary-600 hover:underline">
+            Ver exercícios <ChevronRight size={14} />
+          </Link>
+        </div>
+      ) : null}
 
       {/* This week's workouts */}
       {data && data.weeklyWorkouts.length > 0 && (

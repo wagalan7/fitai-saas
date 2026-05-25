@@ -73,6 +73,33 @@ export class DashboardService {
       return sum + Math.round(WORKOUT_MET * weightKg * (mins / 60));
     }, 0);
 
+    // Streak: count consecutive days with at least 1 workout log
+    const allLogs = await this.prisma.workoutLog.findMany({
+      where: { userId },
+      select: { completedAt: true },
+      orderBy: { completedAt: 'desc' },
+    });
+    const datestrs = [...new Set(allLogs.map(l => {
+      const d = new Date(l.completedAt); d.setHours(0, 0, 0, 0); return d.getTime();
+    }))].sort((a, b) => b - a);
+
+    const todayMidnight = new Date(); todayMidnight.setHours(0, 0, 0, 0);
+    const todayMs = todayMidnight.getTime();
+    const ydayMs = todayMs - 86400000;
+
+    let streak = 0;
+    if (datestrs.length > 0 && (datestrs[0] === todayMs || datestrs[0] === ydayMs)) {
+      streak = 1;
+      for (let i = 1; i < datestrs.length; i++) {
+        if (datestrs[i - 1] - datestrs[i] === 86400000) streak++;
+        else break;
+      }
+    }
+
+    // Today's session: plan session matching current day of week
+    const todayDow = new Date().getDay();
+    const todaySession = workoutPlan?.sessions?.find((s: any) => s.dayOfWeek === todayDow) ?? null;
+
     return {
       profile,
       workoutPlan,
@@ -88,6 +115,8 @@ export class DashboardService {
       },
       calsBurnedToday,
       recentChatSessions,
+      streak,
+      todaySession,
     };
   }
 }
