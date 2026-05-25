@@ -26,7 +26,10 @@ const TEXT = {
 export function Toaster() {
   const [items, setItems] = useState<ToastItem[]>([]);
 
-  useEffect(() => toastBus.subscribe(setItems), []);
+  useEffect(() => {
+    const unsub = toastBus.subscribe(setItems);
+    return () => { unsub(); };
+  }, []);
 
   return (
     <Toast.Provider swipeDirection="right" duration={Infinity}>
