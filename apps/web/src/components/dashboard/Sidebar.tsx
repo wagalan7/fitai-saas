@@ -14,7 +14,7 @@ const NAV_ITEMS = [
   { href: '/workouts', icon: Dumbbell, label: 'Treinos' },
   { href: '/nutrition', icon: Salad, label: 'Nutrição' },
   { href: '/progress', icon: TrendingUp, label: 'Progresso' },
-  { href: '/chat?agent=EVALUATOR', icon: Camera, label: 'Dr. Shape' },
+  { href: '/drshape', icon: Camera, label: 'Dr. Shape' },
   { href: '/profile', icon: User, label: 'Perfil' },
 ];
 

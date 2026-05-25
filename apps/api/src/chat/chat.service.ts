@@ -58,4 +58,27 @@ export class ChatService {
       data: { isActive: false },
     });
   }
+
+  async getEvaluatorSessions(userId: string) {
+    const sessions = await this.prisma.chatSession.findMany({
+      where: { userId, agentType: 'EVALUATOR', isActive: true },
+      orderBy: { updatedAt: 'desc' },
+      take: 10,
+      include: {
+        messages: {
+          where: { role: 'ASSISTANT' },
+          orderBy: { createdAt: 'desc' },
+          take: 1,
+          select: { content: true, createdAt: true },
+        },
+      },
+    });
+    return sessions.map(s => ({
+      id: s.id,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+      lastAnalysis: s.messages[0]?.content ?? null,
+      analysisDate: s.messages[0]?.createdAt ?? null,
+    }));
+  }
 }

@@ -3,9 +3,10 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
-import { Dumbbell, Salad, TrendingUp, Target, Flame, Activity, Camera, Zap, ChevronRight, CheckCircle2, Clock } from 'lucide-react';
+import { Dumbbell, Salad, TrendingUp, Target, Flame, Activity, Camera, Zap, ChevronRight, CheckCircle2, Clock, Bell } from 'lucide-react';
 import Link from 'next/link';
 import ProgressChart from '@/components/dashboard/ProgressChart';
+import { useWorkoutReminder } from '@/hooks/useWorkoutReminder';
 
 interface DashboardData {
   profile: any;
@@ -35,6 +36,7 @@ export default function DashboardPage() {
   const { user } = useAuthStore();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [dismissedReminder, setDismissedReminder] = useState(false);
 
   useEffect(() => {
     api.get('/dashboard').then((r) => {
@@ -42,6 +44,12 @@ export default function DashboardPage() {
       setLoading(false);
     });
   }, []);
+
+  // Check if today's session was already logged this week
+  const hasLoggedToday = !!(data?.todaySession &&
+    data.weeklyWorkouts.some((w: any) => w.workoutSessionId === data.todaySession?.id));
+
+  useWorkoutReminder(data?.todaySession ?? null, hasLoggedToday);
 
   if (loading) {
     return (
@@ -60,6 +68,23 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Workout reminder banner */}
+      {data?.todaySession && !hasLoggedToday && !dismissedReminder && (
+        <div className="flex items-center gap-3 bg-blue-50 border border-blue-200 rounded-xl px-4 py-3">
+          <Bell size={16} className="text-blue-500 flex-shrink-0" />
+          <p className="text-sm text-blue-700 flex-1">
+            <span className="font-semibold">Lembrete:</span> você tem{' '}
+            <span className="font-semibold">{data.todaySession.name}</span> no plano de hoje!
+          </p>
+          <div className="flex items-center gap-3 flex-shrink-0">
+            <Link href="/workouts" className="text-xs font-semibold text-blue-600 hover:underline">Ver treino</Link>
+            <button onClick={() => setDismissedReminder(true)} className="text-blue-400 hover:text-blue-600">
+              <span className="text-xs">✕</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Welcome */}
       <div>
         <h1 className="text-2xl font-bold text-gray-900">

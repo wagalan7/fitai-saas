@@ -43,4 +43,9 @@ export class ChatController {
   deleteSession(@Param('id') id: string, @Req() req: { user: { id: string } }) {
     return this.chatService.deleteSession(id, req.user.id);
   }
+
+  @Get('evaluations')
+  async getEvaluations(@Req() req: { user: { id: string } }) {
+    return this.chatService.getEvaluatorSessions(req.user.id);
+  }
 }
