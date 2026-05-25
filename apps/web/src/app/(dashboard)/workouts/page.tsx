@@ -27,6 +27,7 @@ export default function WorkoutsPage() {
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [loggingSessionId, setLoggingSessionId] = useState<string | null>(null);
   const [logForm, setLogForm] = useState<{ duration: string; rating: number; notes: string }>({ duration: '', rating: 0, notes: '' });
+  const [exerciseLogs, setExerciseLogs] = useState<Array<{ exerciseName: string; sets: Array<{ reps: string; weightKg: string }> }>>([]);
   // maps sessionId → logId (so we can delete)
   const [logSuccess, setLogSuccess] = useState<Record<string, string>>({});
   const [isOffline, setIsOffline] = useState(false);
@@ -77,17 +78,56 @@ export default function WorkoutsPage() {
     }
   }
 
+  function openLogForm(session: any) {
+    setLoggingSessionId(loggingSessionId === session.id ? null : session.id);
+    setLogForm({ duration: '', rating: 0, notes: '' });
+    // Pre-fill exercise logs from session plan
+    setExerciseLogs(
+      (session.exercises || []).map((ex: any) => ({
+        exerciseName: ex.name,
+        sets: Array.from({ length: Number(ex.sets) || 3 }, () => ({
+          reps: String(ex.reps).split('-')[0], // use lower bound as default
+          weightKg: '',
+        })),
+      }))
+    );
+  }
+
+  function updateSet(exIdx: number, setIdx: number, field: 'reps' | 'weightKg', value: string) {
+    setExerciseLogs((prev) => {
+      const updated = prev.map((ex, i) =>
+        i === exIdx
+          ? { ...ex, sets: ex.sets.map((s, j) => (j === setIdx ? { ...s, [field]: value } : s)) }
+          : ex
+      );
+      return updated;
+    });
+  }
+
   async function logWorkout(sessionId: string) {
     try {
-      const { data } = await api.post('/workouts/log', {
+      const payload = {
         workoutSessionId: sessionId,
         durationMinutes: parseInt(logForm.duration) || undefined,
         rating: logForm.rating || undefined,
         notes: logForm.notes || undefined,
-      });
+        exerciseLogs: exerciseLogs
+          .filter((el) => el.sets.some((s) => s.reps || s.weightKg))
+          .map((el) => ({
+            exerciseName: el.exerciseName,
+            sets: el.sets
+              .filter((s) => s.reps || s.weightKg)
+              .map((s) => ({
+                reps: s.reps ? parseInt(s.reps) : undefined,
+                weightKg: s.weightKg ? parseFloat(s.weightKg) : undefined,
+              })),
+          })),
+      };
+      const { data } = await api.post('/workouts/log', payload);
       setLogSuccess((prev) => ({ ...prev, [sessionId]: data.id }));
       setLoggingSessionId(null);
       setLogForm({ duration: '', rating: 0, notes: '' });
+      setExerciseLogs([]);
       toast.success('Treino registrado com sucesso!');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Erro ao registrar treino. Tente novamente.');
@@ -242,10 +282,7 @@ export default function WorkoutsPage() {
                         </div>
                       ) : (
                         <button
-                          onClick={() => {
-                            setLoggingSessionId(loggingSessionId === session.id ? null : session.id);
-                            setLogForm({ duration: '', rating: 0, notes: '' });
-                          }}
+                          onClick={() => openLogForm(session)}
                           className="inline-flex items-center gap-1.5 text-sm bg-green-500 hover:bg-green-600 text-white px-3 py-1.5 rounded-lg font-medium transition-colors"
                         >
                           <CheckCircle size={14} /> Registrar treino
@@ -255,32 +292,69 @@ export default function WorkoutsPage() {
 
                     {/* Log form */}
                     {loggingSessionId === session.id && (
-                      <div className="mt-2 mb-4 p-4 bg-green-50 rounded-xl border border-green-200 space-y-3">
-                        <p className="text-sm font-semibold text-green-800">Registrar conclusão</p>
-                        <div>
-                          <label className="text-xs text-green-700 font-medium block mb-1">Duração (minutos)</label>
-                          <input
-                            type="number"
-                            value={logForm.duration}
-                            onChange={(e) => setLogForm((f) => ({ ...f, duration: e.target.value }))}
-                            placeholder="Ex: 60"
-                            className="w-full border border-green-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-xs text-green-700 font-medium block mb-1">Avaliação</label>
-                          <div className="flex gap-1">
-                            {[1, 2, 3, 4, 5].map((star) => (
-                              <button
-                                key={star}
-                                onClick={() => setLogForm((f) => ({ ...f, rating: star }))}
-                                className="text-yellow-400 hover:scale-110 transition-transform"
-                              >
-                                <Star size={20} fill={logForm.rating >= star ? 'currentColor' : 'none'} />
-                              </button>
-                            ))}
+                      <div className="mt-2 mb-4 p-4 bg-green-50 rounded-xl border border-green-200 space-y-4">
+                        <p className="text-sm font-semibold text-green-800">Registrar treino</p>
+
+                        {/* General info */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs text-green-700 font-medium block mb-1">Duração (min)</label>
+                            <input
+                              type="number"
+                              value={logForm.duration}
+                              onChange={(e) => setLogForm((f) => ({ ...f, duration: e.target.value }))}
+                              placeholder="Ex: 60"
+                              className="w-full border border-green-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-green-400"
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-green-700 font-medium block mb-1">Avaliação</label>
+                            <div className="flex gap-1 pt-1">
+                              {[1, 2, 3, 4, 5].map((star) => (
+                                <button key={star} onClick={() => setLogForm((f) => ({ ...f, rating: star }))} className="text-yellow-400 hover:scale-110 transition-transform">
+                                  <Star size={18} fill={logForm.rating >= star ? 'currentColor' : 'none'} />
+                                </button>
+                              ))}
+                            </div>
                           </div>
                         </div>
+
+                        {/* Per-exercise tracking */}
+                        {exerciseLogs.length > 0 && (
+                          <div className="space-y-3">
+                            <p className="text-xs text-green-700 font-medium">Cargas utilizadas (opcional)</p>
+                            {exerciseLogs.map((el, exIdx) => (
+                              <div key={exIdx} className="bg-white rounded-lg border border-green-100 p-3">
+                                <p className="text-xs font-semibold text-gray-700 mb-2 truncate">{el.exerciseName}</p>
+                                <div className="space-y-1.5">
+                                  {el.sets.map((s, setIdx) => (
+                                    <div key={setIdx} className="flex items-center gap-2">
+                                      <span className="text-xs text-gray-400 w-12 flex-shrink-0">Série {setIdx + 1}</span>
+                                      <input
+                                        type="number"
+                                        value={s.reps}
+                                        onChange={(e) => updateSet(exIdx, setIdx, 'reps', e.target.value)}
+                                        placeholder="Reps"
+                                        className="w-16 border border-gray-200 rounded px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-green-400"
+                                      />
+                                      <span className="text-xs text-gray-300">×</span>
+                                      <input
+                                        type="number"
+                                        step="0.5"
+                                        value={s.weightKg}
+                                        onChange={(e) => updateSet(exIdx, setIdx, 'weightKg', e.target.value)}
+                                        placeholder="kg"
+                                        className="w-16 border border-gray-200 rounded px-2 py-1 text-xs text-center focus:outline-none focus:ring-1 focus:ring-green-400"
+                                      />
+                                      <span className="text-xs text-gray-400">kg</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
                         <div>
                           <label className="text-xs text-green-700 font-medium block mb-1">Observações</label>
                           <textarea

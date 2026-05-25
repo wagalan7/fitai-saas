@@ -20,7 +20,7 @@ const SYSTEM_PROMPTS: Record<AgentType, string> = {
 };
 
 const CHAT_MODEL = 'llama-3.3-70b-versatile';      // chat streaming — no think tags, Portuguese-native
-const GEN_MODEL = 'qwen/qwen3-32b';               // plan generation — better JSON instruction following
+const GEN_MODEL = 'llama-3.3-70b-versatile';      // plan generation — same model, reliable JSON + no think tags
 const EXTRACT_MODEL = 'llama-3.1-8b-instant';     // text→JSON extraction — 30k TPM limit, fast
 const VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
