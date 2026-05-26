@@ -1,0 +1,37 @@
+import {
+  IsArray,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MinLength,
+  MaxLength,
+  Min,
+  Max,
+  ValidateNested,
+} from 'class-validator';
+import { Type } from 'class-transformer';
+
+export class SavePlanFromChatDto {
+  @IsString() @MinLength(20) @MaxLength(20000) text!: string;
+}
+
+export class ExerciseSetDto {
+  @IsOptional() @IsInt() @Min(0) @Max(1000) reps?: number;
+  @IsOptional() @IsNumber() @Min(0) @Max(2000) weightKg?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(86400) durationSecs?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(10) rpe?: number;
+}
+
+export class ExerciseLogDto {
+  @IsString() @MinLength(1) @MaxLength(200) exerciseName!: string;
+  @IsArray() @ValidateNested({ each: true }) @Type(() => ExerciseSetDto) sets!: ExerciseSetDto[];
+}
+
+export class LogWorkoutDto {
+  @IsString() @MinLength(1) workoutSessionId!: string;
+  @IsOptional() @IsInt() @Min(0) @Max(1440) durationMinutes?: number;
+  @IsOptional() @IsInt() @Min(0) @Max(5) rating?: number;
+  @IsOptional() @IsString() @MaxLength(2000) notes?: string;
+  @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ExerciseLogDto) exerciseLogs?: ExerciseLogDto[];
+}

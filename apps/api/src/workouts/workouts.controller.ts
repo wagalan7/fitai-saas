@@ -2,6 +2,7 @@ import { Controller, Get, Post, Delete, Body, Param, UseGuards, Req, ForbiddenEx
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WorkoutsService } from './workouts.service';
+import { LogWorkoutDto, SavePlanFromChatDto } from './workouts.dto';
 
 @Controller('workouts')
 @UseGuards(JwtAuthGuard, ThrottlerGuard)
@@ -18,7 +19,7 @@ export class WorkoutsController {
   @Post('save-from-chat')
   savePlanFromChat(
     @Req() req: { user: { id: string } },
-    @Body() body: { text: string },
+    @Body() body: SavePlanFromChatDto,
   ) {
     return this.workoutsService.savePlanFromText(req.user.id, body.text);
   }
@@ -29,17 +30,7 @@ export class WorkoutsController {
   }
 
   @Post('log')
-  logWorkout(
-    @Req() req: { user: { id: string } },
-    @Body()
-    body: {
-      workoutSessionId: string;
-      durationMinutes?: number;
-      rating?: number;
-      notes?: string;
-      exerciseLogs?: any[];
-    },
-  ) {
+  logWorkout(@Req() req: { user: { id: string } }, @Body() body: LogWorkoutDto) {
     return this.workoutsService.logWorkout(req.user.id, body.workoutSessionId, body);
   }
 

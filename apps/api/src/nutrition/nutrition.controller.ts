@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Query, UseGuards, Req } from '@nestjs/comm
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { NutritionService } from './nutrition.service';
+import { LogMealDto, SavePlanFromChatDto } from './nutrition.dto';
 
 @Controller('nutrition')
 @UseGuards(JwtAuthGuard, ThrottlerGuard)
@@ -18,7 +19,7 @@ export class NutritionController {
   @Post('save-from-chat')
   savePlanFromChat(
     @Req() req: { user: { id: string } },
-    @Body() body: { text: string },
+    @Body() body: SavePlanFromChatDto,
   ) {
     return this.nutritionService.savePlanFromText(req.user.id, body.text);
   }
@@ -29,18 +30,7 @@ export class NutritionController {
   }
 
   @Post('log')
-  logMeal(
-    @Req() req: { user: { id: string } },
-    @Body()
-    body: {
-      mealName: string;
-      calories: number;
-      proteinG: number;
-      carbsG: number;
-      fatG: number;
-      notes?: string;
-    },
-  ) {
+  logMeal(@Req() req: { user: { id: string } }, @Body() body: LogMealDto) {
     return this.nutritionService.logMeal(req.user.id, body);
   }
 
