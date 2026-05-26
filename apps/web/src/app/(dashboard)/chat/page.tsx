@@ -245,6 +245,7 @@ function ChatPageInner() {
               const endpoint = activeAgent === 'TRAINER'
                 ? '/workouts/save-from-chat'
                 : '/nutrition/save-from-chat';
+              const startedAt = Date.now();
               api.post(endpoint, { text: finalized.content }, { timeout: 60000 })
                 .then(() => {
                   setMessages((msgs) => {
@@ -257,7 +258,31 @@ function ChatPageInner() {
                     ? 'Plano de treino salvo em Meus Treinos!'
                     : 'Plano alimentar salvo em Nutrição!');
                 })
-                .catch((err: any) => {
+                .catch(async (err: any) => {
+                  // The save may have actually succeeded server-side even though
+                  // we received an error (proxy/edge timeout, idempotency dedup
+                  // returning a stale rejected promise, etc.). Verify by checking
+                  // if a plan was created in the last ~2 min before showing error.
+                  try {
+                    const verifyUrl = activeAgent === 'TRAINER' ? '/workouts/plan' : '/nutrition/plan';
+                    const { data } = await api.get(verifyUrl);
+                    const createdAt = data?.createdAt ? new Date(data.createdAt).getTime() : 0;
+                    if (createdAt && Date.now() - createdAt < 120_000 && createdAt >= startedAt - 5_000) {
+                      // Plan was actually saved — treat as success.
+                      setMessages((msgs) => {
+                        const idx = msgs.length - 1;
+                        const next = [...msgs];
+                        next[idx] = { ...next[idx], savedPlan: 'saved' };
+                        return next;
+                      });
+                      toast.success(activeAgent === 'TRAINER'
+                        ? 'Plano de treino salvo em Meus Treinos!'
+                        : 'Plano alimentar salvo em Nutrição!');
+                      return;
+                    }
+                  } catch {
+                    // Verification failed — fall through to error state.
+                  }
                   const msg = err?.response?.data?.message || 'Erro ao salvar plano';
                   setMessages((msgs) => {
                     const idx = msgs.length - 1;
@@ -318,6 +343,7 @@ function ChatPageInner() {
       return updated;
     });
 
+    const startedAt = Date.now();
     try {
       if (activeAgent === 'TRAINER') {
         await api.post('/workouts/save-from-chat', { text: msg.content }, { timeout: 60000 });
@@ -330,6 +356,21 @@ function ChatPageInner() {
         return updated;
       });
     } catch (err: any) {
+      // Verify: the save may have succeeded even on error (proxy timeout, etc.)
+      try {
+        const verifyUrl = activeAgent === 'TRAINER' ? '/workouts/plan' : '/nutrition/plan';
+        const { data } = await api.get(verifyUrl);
+        const createdAt = data?.createdAt ? new Date(data.createdAt).getTime() : 0;
+        if (createdAt && Date.now() - createdAt < 120_000 && createdAt >= startedAt - 5_000) {
+          setMessages((prev) => {
+            const updated = [...prev];
+            updated[index] = { ...updated[index], savedPlan: 'saved' };
+            return updated;
+          });
+          toast.success('Plano salvo!');
+          return;
+        }
+      } catch {}
       const errMsg = err?.response?.data?.message || err?.message || 'Erro desconhecido';
       console.error('[savePlan] error:', errMsg, err?.response?.status);
       toast.error(`Erro ao salvar: ${errMsg}`);
