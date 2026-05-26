@@ -196,20 +196,22 @@ ${recentProgress
   }
 
   async extractWorkoutFromText(text: string): Promise<any> {
-    // Truncate to avoid TPM limits — workout plans are usually in the first 3000 chars
-    const truncated = text.slice(0, 3000);
+    // A full weekly plan (5-6 days × multiple exercises each) easily reaches
+    // 8-10k chars. Truncating at 3k cuts off the back half of the week, which
+    // is exactly the "partial save" the user reported on mobile/long replies.
+    const truncated = text.slice(0, 12000);
     const completion = await this.groq.chat.completions.create({
       model: EXTRACT_MODEL,
       messages: [
         {
           role: 'system',
-          content: `Converta a descrição de treino para JSON. Responda APENAS com JSON, sem markdown:
+          content: `Converta a descrição de treino para JSON. Inclua TODOS os dias mencionados, sem omitir nenhum. Responda APENAS com JSON, sem markdown:
 {"name":"Nome","description":"Desc","sessions":[{"name":"Segunda-feira — Peito","dayOfWeek":1,"muscleGroups":["peito"],"estimatedTime":60,"exercises":[{"order":1,"name":"Supino Reto","sets":4,"reps":"8-12","restSeconds":90,"notes":"dica"}]}]}
 dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
         },
         { role: 'user', content: truncated },
       ],
-      max_tokens: 3000,
+      max_tokens: 6000,
     });
 
     const raw = completion.choices[0]?.message?.content || '';
@@ -217,18 +219,18 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
   }
 
   async extractNutritionFromText(text: string): Promise<any> {
-    const truncated = text.slice(0, 3000);
+    const truncated = text.slice(0, 12000);
     const completion = await this.groq.chat.completions.create({
       model: EXTRACT_MODEL,
       messages: [
         {
           role: 'system',
-          content: `Converta a descrição de dieta para JSON. Responda APENAS com JSON, sem markdown:
+          content: `Converta a descrição de dieta para JSON. Inclua TODAS as refeições mencionadas. Responda APENAS com JSON, sem markdown:
 {"calories":2200,"proteinG":160,"carbsG":220,"fatG":73,"meals":[{"name":"Café da Manhã","timeOfDay":"breakfast","calories":450,"proteinG":30,"carbsG":55,"fatG":10,"foods":[{"name":"Aveia","quantityG":80,"calories":300,"proteinG":10,"carbsG":54,"fatG":6,"alternatives":["granola"]}]}]}`,
         },
         { role: 'user', content: truncated },
       ],
-      max_tokens: 3000,
+      max_tokens: 6000,
     });
 
     const raw = completion.choices[0]?.message?.content || '';

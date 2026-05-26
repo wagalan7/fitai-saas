@@ -32,6 +32,24 @@ function looksLikePlan(content: string, agentType: AgentType): boolean {
   return false;
 }
 
+// Detect if Dr Shape (EVALUATOR) produced a real body-composition analysis.
+// Requires the response to have at least two of the section markers AND
+// substantial length. This avoids triggering on greetings/clarifications.
+function looksLikeEvaluation(content: string): boolean {
+  if (!content || content.length < 400) return false;
+  const markers = [
+    'avaliação corporal',
+    'pontos positivos',
+    'áreas de desenvolvimento',
+    'recomendações de treino',
+    'ajustes nutricionais',
+    'composição corporal',
+    'percentual de gordura',
+  ];
+  const hits = markers.filter((m) => content.toLowerCase().includes(m)).length;
+  return hits >= 2;
+}
+
 const AGENTS: Record<AgentType, { label: string; icon: React.ReactNode; color: string; welcome: string; supportsImage?: boolean }> = {
   TRAINER: {
     label: 'Personal Trainer',
@@ -73,6 +91,7 @@ interface ChatMessage {
   streaming?: boolean;
   savedPlan?: 'saving' | 'saved' | 'error';
   saveError?: string;
+  autoRegenTriggered?: boolean;
 }
 
 // Render markdown-like formatting inline
@@ -293,6 +312,32 @@ function ChatPageInner() {
                 });
             }, 0);
           }
+
+          // Multi-agent orchestration: after Dr Shape (EVALUATOR) finishes a
+          // substantial body analysis, automatically regenerate workout + diet
+          // in background using the new evaluator memories. Heuristic: response
+          // must look like a real evaluation (has analysis markers and >400 chars).
+          if (
+            activeAgent === 'EVALUATOR' &&
+            looksLikeEvaluation(finalized.content) &&
+            !finalized.autoRegenTriggered
+          ) {
+            updated[updated.length - 1] = { ...finalized, autoRegenTriggered: true };
+            setTimeout(() => {
+              toast.info('Atualizando seu treino e dieta com base na nova avaliação…');
+              Promise.allSettled([
+                api.post('/workouts/generate', {}, { timeout: 90000 }),
+                api.post('/nutrition/generate', {}, { timeout: 90000 }),
+              ]).then(([w, n]) => {
+                const okW = w.status === 'fulfilled';
+                const okN = n.status === 'fulfilled';
+                if (okW && okN) toast.success('Treino e dieta atualizados em Meus Treinos e Nutrição!');
+                else if (okW) toast.info('Treino atualizado. A dieta falhou — tente novamente.');
+                else if (okN) toast.info('Dieta atualizada. O treino falhou — tente novamente.');
+                else toast.error('Não consegui atualizar os planos. Tente em alguns minutos.');
+              });
+            }, 800);
+          }
         }
         return updated;
       });
@@ -318,14 +363,66 @@ function ChatPageInner() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
+  // Compress image to max 1280px on the longest side, JPEG 82% quality.
+  // Phone photos can be 4-8MB raw; that overflows the WebSocket buffer and
+  // the message gets silently dropped (= "Dr Shape ignored my photo").
+  async function compressImage(file: File): Promise<{ blob: Blob; dataUrl: string }> {
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onloadend = () => resolve(r.result as string);
+      r.onerror = reject;
+      r.readAsDataURL(file);
+    });
+
+    return await new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1280;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          if (width >= height) { height = Math.round(height * (MAX / width)); width = MAX; }
+          else { width = Math.round(width * (MAX / height)); height = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { reject(new Error('No 2d context')); return; }
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) { reject(new Error('toBlob failed')); return; }
+            const r2 = new FileReader();
+            r2.onloadend = () => resolve({ blob, dataUrl: r2.result as string });
+            r2.onerror = reject;
+            r2.readAsDataURL(blob);
+          },
+          'image/jpeg',
+          0.82,
+        );
+      };
+      img.onerror = reject;
+      img.src = dataUrl;
+    });
+  }
+
+  async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file) return;
-    setSelectedImage(file);
-    const reader = new FileReader();
-    reader.onloadend = () => setImagePreview(reader.result as string);
-    reader.readAsDataURL(file);
     e.target.value = '';
+    if (!file) return;
+    try {
+      const { blob, dataUrl } = await compressImage(file);
+      // Wrap compressed blob in a File so downstream code stays the same.
+      const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+      setSelectedImage(compressed);
+      setImagePreview(dataUrl);
+    } catch {
+      // Fallback: send original if compression fails for some weird format.
+      setSelectedImage(file);
+      const reader = new FileReader();
+      reader.onloadend = () => setImagePreview(reader.result as string);
+      reader.readAsDataURL(file);
+    }
   }
 
   function clearImage() {

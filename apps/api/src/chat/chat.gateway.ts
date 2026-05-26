@@ -23,6 +23,10 @@ interface AuthSocket extends Socket {
     credentials: true,
   },
   namespace: '/chat',
+  // Phone photos as base64 easily exceed Socket.io's 1MB default, causing
+  // the message to be silently dropped (which manifests as "Dr Shape ignored
+  // my photo"). 10MB gives plenty of headroom; client also compresses.
+  maxHttpBufferSize: 10 * 1024 * 1024,
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
