@@ -223,7 +223,52 @@ function ChatPageInner() {
       setMessages((prev) => {
         const updated = [...prev];
         const last = updated[updated.length - 1];
-        if (last?.streaming) updated[updated.length - 1] = { ...last, streaming: false };
+        if (last?.streaming) {
+          const finalized = { ...last, streaming: false };
+          updated[updated.length - 1] = finalized;
+
+          // Auto-save plan if the message looks like one
+          if (
+            (activeAgent === 'TRAINER' || activeAgent === 'NUTRITIONIST') &&
+            looksLikePlan(finalized.content, activeAgent) &&
+            !finalized.savedPlan
+          ) {
+            // Trigger save async — index is last element
+            setTimeout(() => {
+              setMessages((msgs) => {
+                const idx = msgs.length - 1;
+                if (msgs[idx]?.savedPlan) return msgs; // already saving/saved
+                const next = [...msgs];
+                next[idx] = { ...next[idx], savedPlan: 'saving' };
+                return next;
+              });
+              const endpoint = activeAgent === 'TRAINER'
+                ? '/workouts/save-from-chat'
+                : '/nutrition/save-from-chat';
+              api.post(endpoint, { text: finalized.content }, { timeout: 60000 })
+                .then(() => {
+                  setMessages((msgs) => {
+                    const idx = msgs.length - 1;
+                    const next = [...msgs];
+                    next[idx] = { ...next[idx], savedPlan: 'saved' };
+                    return next;
+                  });
+                  toast.success(activeAgent === 'TRAINER'
+                    ? 'Plano de treino salvo em Meus Treinos!'
+                    : 'Plano alimentar salvo em Nutrição!');
+                })
+                .catch((err: any) => {
+                  const msg = err?.response?.data?.message || 'Erro ao salvar plano';
+                  setMessages((msgs) => {
+                    const idx = msgs.length - 1;
+                    const next = [...msgs];
+                    next[idx] = { ...next[idx], savedPlan: 'error', saveError: msg };
+                    return next;
+                  });
+                });
+            }, 0);
+          }
+        }
         return updated;
       });
     });

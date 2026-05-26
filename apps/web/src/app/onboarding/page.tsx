@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, ChevronLeft, Check } from 'lucide-react';
 import { api } from '@/lib/api';
+import { toast } from '@/lib/toast';
 
 const STEPS = [
   {
@@ -84,6 +85,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState<Record<string, any>>({});
   const [loading, setLoading] = useState(false);
+  const [generating, setGenerating] = useState(false);
 
   const currentStep = STEPS[step];
   const isLast = step === STEPS.length - 1;
@@ -116,12 +118,31 @@ export default function OnboardingPage() {
       try {
         const finalAnswers = parseAnswers(answers);
         await api.post('/onboarding/complete', finalAnswers);
-        router.push('/dashboard');
       } catch (err) {
         console.error(err);
-      } finally {
+        toast.error('Erro ao salvar perfil. Tente novamente.');
         setLoading(false);
+        return;
       }
+
+      // Now auto-generate workout + nutrition in parallel
+      setGenerating(true);
+      const [workout, nutrition] = await Promise.allSettled([
+        api.post('/workouts/generate', {}, { timeout: 90000 }),
+        api.post('/nutrition/generate', {}, { timeout: 90000 }),
+      ]);
+
+      if (workout.status === 'fulfilled' && nutrition.status === 'fulfilled') {
+        toast.success('Seu plano de treino e dieta estão prontos!');
+      } else if (workout.status === 'fulfilled') {
+        toast.info('Treino criado. A dieta pode ser gerada depois pela Nutricionista.');
+      } else if (nutrition.status === 'fulfilled') {
+        toast.info('Dieta criada. O treino pode ser gerado depois pelo Trainer.');
+      } else {
+        toast.info('Perfil salvo. Peça seu plano ao Trainer e Nutricionista no chat.');
+      }
+
+      router.push('/dashboard');
     } else {
       setStep((s) => s + 1);
     }
@@ -133,6 +154,24 @@ export default function OnboardingPage() {
     if (s.fields) return s.fields.every((f) => !!answers[f.key]);
     return true;
   };
+
+  if (generating) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center p-4">
+        <div className="w-full max-w-md text-center">
+          <div className="inline-block animate-spin w-12 h-12 border-4 border-primary-500 border-t-transparent rounded-full mb-6" />
+          <h2 className="text-white text-2xl font-bold mb-3">Criando seu plano personalizado</h2>
+          <p className="text-gray-400 mb-6">
+            Nossos especialistas estão montando seu treino e dieta com base no seu perfil. Isso pode levar até 1 minuto.
+          </p>
+          <div className="space-y-2 text-left text-sm text-gray-300">
+            <div className="flex items-center gap-2"><span className="text-primary-400">💪</span> Personal Trainer montando seu treino…</div>
+            <div className="flex items-center gap-2"><span className="text-primary-400">🥗</span> Nutricionista calculando macros e refeições…</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-800 flex items-center justify-center p-4">
