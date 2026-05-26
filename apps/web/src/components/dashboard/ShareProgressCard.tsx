@@ -26,10 +26,10 @@ export default function ShareProgressCard({ userName, streak, weeklyWorkouts, we
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
-    // Background gradient — emerald to teal (brand)
+    // Background gradient — gold (brand)
     const grad = ctx.createLinearGradient(0, 0, 1080, 1080);
-    grad.addColorStop(0, '#10b981');
-    grad.addColorStop(1, '#0f766e');
+    grad.addColorStop(0, '#D4AF37');
+    grad.addColorStop(1, '#8B6F1F');
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 1080, 1080);
 

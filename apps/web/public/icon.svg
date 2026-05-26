@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
-  <rect width="512" height="512" rx="96" fill="#10b981"/>
+  <rect width="512" height="512" rx="96" fill="#D4AF37"/>
   <g fill="white" transform="translate(96,96)">
     <!-- Dumbbell icon, scaled to 320x320 area -->
     <path d="M64 120h-16a16 16 0 0 0-16 16v48a16 16 0 0 0 16 16h16zM112 88H80a16 16 0 0 0-16 16v112a16 16 0 0 0 16 16h32a16 16 0 0 0 16-16V104a16 16 0 0 0-16-16zM256 88h-32a16 16 0 0 0-16 16v112a16 16 0 0 0 16 16h32a16 16 0 0 0 16-16V104a16 16 0 0 0-16-16zM288 120v80h16a16 16 0 0 0 16-16v-48a16 16 0 0 0-16-16zM144 144h64v32h-64z"/>
