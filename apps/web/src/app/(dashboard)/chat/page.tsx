@@ -9,6 +9,7 @@ import { useChatStore } from '@/store/chat.store';
 import { useSocket } from '@/hooks/useSocket';
 import { api } from '@/lib/api';
 import { toast } from '@/lib/toast';
+import { emitPlanUpdated } from '@/lib/events';
 import { useAuthStore } from '@/store/auth.store';
 
 type AgentType = 'TRAINER' | 'NUTRITIONIST' | 'COACH' | 'ANALYST' | 'EVALUATOR';
@@ -332,6 +333,10 @@ function ChatPageInner() {
               ]).then(([w, n]) => {
                 const okW = w.status === 'fulfilled';
                 const okN = n.status === 'fulfilled';
+                // Notify open /workouts and /nutrition pages so they refetch
+                // without requiring a manual reload.
+                if (okW) emitPlanUpdated('workout');
+                if (okN) emitPlanUpdated('nutrition');
                 if (okW && okN) toast.success('Treino e dieta atualizados em Meus Treinos e Nutrição!');
                 else if (okW) toast.info('Treino atualizado. A dieta falhou — tente novamente.');
                 else if (okN) toast.info('Dieta atualizada. O treino falhou — tente novamente.');

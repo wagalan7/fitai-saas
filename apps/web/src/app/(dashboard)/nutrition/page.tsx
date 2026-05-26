@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { toast } from '@/lib/toast';
+import { onPlanUpdated } from '@/lib/events';
 import { Salad, RefreshCw, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 
 export default function NutritionPage() {
@@ -13,7 +14,14 @@ export default function NutritionPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loggedMeals, setLoggedMeals] = useState<Set<string>>(new Set());
 
-  useEffect(() => { loadPlan(); }, []);
+  useEffect(() => {
+    loadPlan();
+    const off = onPlanUpdated('nutrition', () => {
+      loadPlan();
+      toast.success('Plano alimentar atualizado a partir da nova avaliação!');
+    });
+    return off;
+  }, []);
 
   async function loadPlan() {
     setLoading(true);

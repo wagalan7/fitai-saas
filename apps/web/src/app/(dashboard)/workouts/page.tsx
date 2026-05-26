@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { toast } from '@/lib/toast';
+import { onPlanUpdated } from '@/lib/events';
 import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play, CheckCircle, Star, Trash2 } from 'lucide-react';
 
 const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -51,6 +52,12 @@ export default function WorkoutsPage() {
 
   useEffect(() => {
     loadPlan();
+    // Refetch when the chat auto-regen (post Dr Shape) emits a workout update
+    const off = onPlanUpdated('workout', () => {
+      loadPlan();
+      toast.success('Plano de treino atualizado a partir da nova avaliação!');
+    });
+    return off;
   }, []);
 
   async function loadPlan() {
