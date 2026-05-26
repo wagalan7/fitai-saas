@@ -13,6 +13,7 @@ import { MemoryModule } from './memory/memory.module';
 import { ProgressModule } from './progress/progress.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ProfileModule } from './profile/profile.module';
+import { PushModule } from './push/push.module';
 import { DatabaseModule } from './common/database.module';
 
 @Module({
@@ -32,6 +33,7 @@ import { DatabaseModule } from './common/database.module';
     ProgressModule,
     DashboardModule,
     ProfileModule,
+    PushModule,
   ],
 })
 export class AppModule {}

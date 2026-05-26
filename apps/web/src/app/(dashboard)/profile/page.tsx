@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/store/auth.store';
 import { toast } from '@/lib/toast';
-import { User, Phone, MapPin, CreditCard, Calendar, Save, CheckCircle, AlertCircle, Edit3, Brain, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { User, Phone, MapPin, CreditCard, Calendar, Save, CheckCircle, AlertCircle, Edit3, Brain, Trash2, ChevronDown, ChevronUp, Bell, BellOff } from 'lucide-react';
+import { enablePush, disablePush, getNotificationStatus } from '@/lib/push';
 
 const AGENT_LABELS: Record<string, string> = {
   TRAINER: '🏋️ Personal Trainer',
@@ -302,7 +303,77 @@ export default function ProfilePage() {
         </button>
       </form>
 
+      <PushNotificationsSection />
       <MemoriesSection />
+    </div>
+  );
+}
+
+function PushNotificationsSection() {
+  const [status, setStatus] = useState<'loading' | 'unsupported' | 'denied' | 'granted' | 'default' | 'unsubscribed'>('loading');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    getNotificationStatus().then((s) => setStatus(s));
+  }, []);
+
+  async function turnOn() {
+    setBusy(true);
+    const res = await enablePush();
+    setBusy(false);
+    if (res.ok) {
+      setStatus('granted');
+      toast.success('Notificações ativadas!');
+    } else if (res.reason === 'denied') {
+      setStatus('denied');
+      toast.error('Permissão negada. Habilite manualmente nas configurações do navegador.');
+    } else if (res.reason === 'disabled') {
+      toast.info('Notificações push ainda não estão configuradas no servidor.');
+    } else if (res.reason === 'unsupported') {
+      toast.error('Seu navegador não suporta notificações push.');
+    } else {
+      toast.error('Não foi possível ativar as notificações.');
+    }
+  }
+
+  async function turnOff() {
+    setBusy(true);
+    await disablePush();
+    setBusy(false);
+    setStatus('unsubscribed');
+    toast.success('Notificações desativadas.');
+  }
+
+  if (status === 'loading') return null;
+
+  return (
+    <div className="card p-6 mt-6">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3 flex-1 min-w-0">
+          <div className="w-10 h-10 bg-primary-50 rounded-xl flex items-center justify-center flex-shrink-0">
+            {status === 'granted' ? <Bell size={18} className="text-primary-600" /> : <BellOff size={18} className="text-gray-400" />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-gray-900">Notificações push</h3>
+            <p className="text-sm text-gray-500 mt-0.5">
+              {status === 'granted' && 'Você receberá lembretes de treino, mesmo com o app fechado.'}
+              {(status === 'default' || status === 'unsubscribed') && 'Receba lembretes de treino e dieta no celular ou navegador.'}
+              {status === 'denied' && 'Permissão negada. Ative manualmente nas configurações do navegador.'}
+              {status === 'unsupported' && 'Seu navegador não suporta notificações push.'}
+            </p>
+          </div>
+        </div>
+        {status === 'granted' && (
+          <button onClick={turnOff} disabled={busy} className="text-sm text-gray-500 hover:text-red-600 disabled:opacity-50 flex-shrink-0">
+            Desativar
+          </button>
+        )}
+        {(status === 'default' || status === 'unsubscribed') && (
+          <button onClick={turnOn} disabled={busy} className="bg-primary-500 hover:bg-primary-600 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg flex-shrink-0">
+            {busy ? 'Ativando...' : 'Ativar'}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

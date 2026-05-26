@@ -1,6 +1,10 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { AgentsService } from '../agents/agents.service';
+
+const saveDedupCache = new Map<string, { result: Promise<any>; ts: number }>();
+const DEDUP_TTL_MS = 60_000;
 
 @Injectable()
 export class NutritionService {
@@ -52,6 +56,27 @@ export class NutritionService {
   }
 
   async savePlanFromText(userId: string, text: string) {
+    const hash = createHash('sha256').update(text).digest('hex').slice(0, 16);
+    const key = `${userId}:${hash}`;
+    const now = Date.now();
+    const cached = saveDedupCache.get(key);
+    if (cached && now - cached.ts < DEDUP_TTL_MS) {
+      console.log(`[savePlanFromText:nutrition] dedup hit key=${key}`);
+      return cached.result;
+    }
+
+    const promise = this._savePlanFromText(userId, text);
+    saveDedupCache.set(key, { result: promise, ts: now });
+    promise.catch(() => saveDedupCache.delete(key));
+    if (saveDedupCache.size > 200) {
+      for (const [k, v] of saveDedupCache) {
+        if (now - v.ts > DEDUP_TTL_MS) saveDedupCache.delete(k);
+      }
+    }
+    return promise;
+  }
+
+  private async _savePlanFromText(userId: string, text: string) {
     let planData: any;
     try {
       planData = await this.agentsService.extractNutritionFromText(text);

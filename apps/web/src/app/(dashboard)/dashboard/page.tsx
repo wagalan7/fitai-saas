@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store/auth.store';
 import { Dumbbell, Salad, TrendingUp, Target, Flame, Activity, Camera, Zap, ChevronRight, CheckCircle2, Clock, Bell } from 'lucide-react';
 import Link from 'next/link';
 import ProgressChart from '@/components/dashboard/ProgressChart';
+import ShareProgressCard from '@/components/dashboard/ShareProgressCard';
 import { useWorkoutReminder } from '@/hooks/useWorkoutReminder';
 
 interface DashboardData {
@@ -272,6 +273,17 @@ export default function DashboardPage() {
             <Flame size={20} className="text-orange-400 flex-shrink-0" />
           </div>
         </div>
+      )}
+
+      {/* Share progress */}
+      {!isEmpty && (
+        <ShareProgressCard
+          userName={user?.name || 'Atleta'}
+          streak={data?.streak || 0}
+          weeklyWorkouts={data?.weeklyWorkoutCount || 0}
+          weeklyTarget={data?.profile?.workoutsPerWeek || 3}
+          adherencePct={data?.adherencePct || 0}
+        />
       )}
 
       {/* Quick actions */}

@@ -1,6 +1,12 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { AgentsService } from '../agents/agents.service';
+
+// In-memory dedup: userId+hash → in-flight or recently-completed result.
+// 60s TTL is enough to catch double-clicks, auto-save races, and network retries.
+const saveDedupCache = new Map<string, { result: Promise<any>; ts: number }>();
+const DEDUP_TTL_MS = 60_000;
 
 @Injectable()
 export class WorkoutsService {
@@ -91,24 +97,46 @@ export class WorkoutsService {
 
   async savePlanFromText(userId: string, text: string) {
     console.log(`[savePlanFromText] userId=${userId} textLength=${text?.length}`);
-    let planData: any;
-    try {
-      planData = await this.agentsService.extractWorkoutFromText(text);
-    } catch (err: any) {
-      console.warn(`[savePlanFromText] extraction failed: ${err?.message}`);
-      throw new BadRequestException(
-        'Não foi possível identificar um plano de treino nessa mensagem. Peça ao Trainer para criar um plano com dias e exercícios detalhados.',
-      );
+
+    // Idempotency: dedup identical (userId, text) calls within 60s
+    const hash = createHash('sha256').update(text).digest('hex').slice(0, 16);
+    const key = `${userId}:${hash}`;
+    const now = Date.now();
+    const cached = saveDedupCache.get(key);
+    if (cached && now - cached.ts < DEDUP_TTL_MS) {
+      console.log(`[savePlanFromText] dedup hit key=${key}`);
+      return cached.result;
     }
 
-    if (!planData?.sessions?.length) {
-      throw new BadRequestException(
-        'O plano extraído está vazio. Peça ao Trainer para descrever o plano com sessões e exercícios específicos.',
-      );
-    }
+    const promise = (async () => {
+      let planData: any;
+      try {
+        planData = await this.agentsService.extractWorkoutFromText(text);
+      } catch (err: any) {
+        console.warn(`[savePlanFromText] extraction failed: ${err?.message}`);
+        throw new BadRequestException(
+          'Não foi possível identificar um plano de treino nessa mensagem. Peça ao Trainer para criar um plano com dias e exercícios detalhados.',
+        );
+      }
+      if (!planData?.sessions?.length) {
+        throw new BadRequestException(
+          'O plano extraído está vazio. Peça ao Trainer para descrever o plano com sessões e exercícios específicos.',
+        );
+      }
+      console.log(`[savePlanFromText] extracted name="${planData?.name}" sessions=${planData?.sessions?.length}`);
+      return this.replacePlan(userId, planData, 'chat');
+    })();
 
-    console.log(`[savePlanFromText] extracted name="${planData?.name}" sessions=${planData?.sessions?.length}`);
-    return this.replacePlan(userId, planData, 'chat');
+    saveDedupCache.set(key, { result: promise, ts: now });
+    // Clean up failures so retry is possible
+    promise.catch(() => saveDedupCache.delete(key));
+    // GC stale entries opportunistically
+    if (saveDedupCache.size > 200) {
+      for (const [k, v] of saveDedupCache) {
+        if (now - v.ts > DEDUP_TTL_MS) saveDedupCache.delete(k);
+      }
+    }
+    return promise;
   }
 
   async getActivePlan(userId: string) {
