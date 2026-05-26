@@ -105,31 +105,45 @@ export default function WorkoutsPage() {
   }
 
   async function logWorkout(sessionId: string) {
+    const payload = {
+      workoutSessionId: sessionId,
+      durationMinutes: parseInt(logForm.duration) || undefined,
+      rating: logForm.rating || undefined,
+      notes: logForm.notes || undefined,
+      exerciseLogs: exerciseLogs
+        .filter((el) => el.sets.some((s) => s.reps || s.weightKg))
+        .map((el) => ({
+          exerciseName: el.exerciseName,
+          sets: el.sets
+            .filter((s) => s.reps || s.weightKg)
+            .map((s) => ({
+              reps: s.reps ? parseInt(s.reps) : undefined,
+              weightKg: s.weightKg ? parseFloat(s.weightKg) : undefined,
+            })),
+        })),
+    };
+
+    // Optimistic update: close form + mark as done immediately
+    const optimisticId = `optimistic-${Date.now()}`;
+    setLogSuccess((prev) => ({ ...prev, [sessionId]: optimisticId }));
+    setLoggingSessionId(null);
+    setLogForm({ duration: '', rating: 0, notes: '' });
+    setExerciseLogs([]);
+    toast.success('Treino registrado!');
+
     try {
-      const payload = {
-        workoutSessionId: sessionId,
-        durationMinutes: parseInt(logForm.duration) || undefined,
-        rating: logForm.rating || undefined,
-        notes: logForm.notes || undefined,
-        exerciseLogs: exerciseLogs
-          .filter((el) => el.sets.some((s) => s.reps || s.weightKg))
-          .map((el) => ({
-            exerciseName: el.exerciseName,
-            sets: el.sets
-              .filter((s) => s.reps || s.weightKg)
-              .map((s) => ({
-                reps: s.reps ? parseInt(s.reps) : undefined,
-                weightKg: s.weightKg ? parseFloat(s.weightKg) : undefined,
-              })),
-          })),
-      };
       const { data } = await api.post('/workouts/log', payload);
+      // Replace optimistic id with real one (needed for delete)
       setLogSuccess((prev) => ({ ...prev, [sessionId]: data.id }));
-      setLoggingSessionId(null);
-      setLogForm({ duration: '', rating: 0, notes: '' });
-      setExerciseLogs([]);
-      toast.success('Treino registrado com sucesso!');
     } catch (err: any) {
+      // Revert optimistic state
+      setLogSuccess((prev) => {
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
+      // Reopen the form so the user can retry
+      setLoggingSessionId(sessionId);
       toast.error(err?.response?.data?.message || 'Erro ao registrar treino. Tente novamente.');
     }
   }
@@ -137,15 +151,22 @@ export default function WorkoutsPage() {
   async function deleteLog(sessionId: string) {
     const logId = logSuccess[sessionId];
     if (!logId) return;
+    // Skip if optimistic id (still pending creation)
+    if (logId.startsWith('optimistic-')) return;
+
+    // Optimistic remove
+    setLogSuccess((prev) => {
+      const updated = { ...prev };
+      delete updated[sessionId];
+      return updated;
+    });
+    toast.success('Registro excluído.');
+
     try {
       await api.delete(`/workouts/log/${logId}`);
-      setLogSuccess((prev) => {
-        const updated = { ...prev };
-        delete updated[sessionId];
-        return updated;
-      });
-      toast.success('Registro excluído.');
     } catch (err: any) {
+      // Revert
+      setLogSuccess((prev) => ({ ...prev, [sessionId]: logId }));
       toast.error(err?.response?.data?.message || 'Erro ao excluir registro.');
     }
   }
