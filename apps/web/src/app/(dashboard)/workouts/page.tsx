@@ -170,8 +170,25 @@ export default function WorkoutsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" />
+      <div className="space-y-4 animate-pulse">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="h-7 w-40 bg-gray-200 rounded mb-2" />
+            <div className="h-4 w-56 bg-gray-100 rounded" />
+          </div>
+          <div className="h-10 w-32 bg-gray-200 rounded-xl" />
+        </div>
+        {[0,1,2].map(i => (
+          <div key={i} className="card p-5">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 bg-gray-200 rounded-xl" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-32 bg-gray-200 rounded" />
+                <div className="h-3 w-48 bg-gray-100 rounded" />
+              </div>
+            </div>
+          </div>
+        ))}
       </div>
     );
   }

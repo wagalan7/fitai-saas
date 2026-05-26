@@ -2,13 +2,44 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { Camera, Plus, ChevronDown, ChevronUp, ArrowRight } from 'lucide-react';
+import { toast } from '@/lib/toast';
+import { Camera, Plus, ChevronDown, ChevronUp, ArrowRight, Sparkles, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 export default function DrShapePage() {
+  const router = useRouter();
   const [evaluations, setEvaluations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [regenerating, setRegenerating] = useState(false);
+
+  async function regeneratePlans() {
+    if (regenerating) return;
+    const ok = window.confirm(
+      'Isso irá substituir seu plano de treino e dieta atuais por novos planos baseados na avaliação mais recente. Continuar?'
+    );
+    if (!ok) return;
+    setRegenerating(true);
+    try {
+      const [workout, nutrition] = await Promise.allSettled([
+        api.post('/workouts/generate', {}, { timeout: 90000 }),
+        api.post('/nutrition/generate', {}, { timeout: 90000 }),
+      ]);
+      if (workout.status === 'fulfilled' && nutrition.status === 'fulfilled') {
+        toast.success('Novo plano de treino e dieta criados!');
+      } else if (workout.status === 'fulfilled') {
+        toast.info('Treino atualizado. A dieta falhou — tente de novo em alguns minutos.');
+      } else if (nutrition.status === 'fulfilled') {
+        toast.info('Dieta atualizada. O treino falhou — tente de novo em alguns minutos.');
+      } else {
+        toast.error('Não foi possível gerar os planos. Tente de novo em alguns minutos.');
+      }
+      router.push('/dashboard');
+    } finally {
+      setRegenerating(false);
+    }
+  }
 
   useEffect(() => {
     api.get('/chat/evaluations')
@@ -65,6 +96,30 @@ export default function DrShapePage() {
           </div>
         </div>
       </div>
+
+      {/* Regenerate plans CTA — only shown if there's at least one evaluation */}
+      {evaluations.length > 0 && (
+        <div className="card p-5 border-2 border-primary-200 bg-primary-50">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 bg-primary-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <Sparkles size={22} className="text-primary-600" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold text-gray-900 mb-1">Atualizar treino e dieta</h3>
+              <p className="text-sm text-gray-600 leading-relaxed mb-3">
+                Use sua avaliação mais recente para gerar um novo plano de treino e dieta personalizados ao seu estado atual.
+              </p>
+              <button
+                onClick={regeneratePlans}
+                disabled={regenerating}
+                className="inline-flex items-center gap-2 bg-primary-500 hover:bg-primary-600 disabled:opacity-60 text-white px-4 py-2.5 rounded-xl font-medium transition-colors text-sm"
+              >
+                {regenerating ? <><Loader2 size={16} className="animate-spin" /> Gerando…</> : <><Sparkles size={16} /> Regenerar planos com base na avaliação</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Past evaluations */}
       {evaluations.length === 0 ? (

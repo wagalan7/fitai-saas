@@ -53,11 +53,31 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" />
+      <div className="space-y-6 animate-pulse">
+        <div>
+          <div className="h-7 w-48 bg-gray-200 rounded mb-2" />
+          <div className="h-4 w-64 bg-gray-100 rounded" />
+        </div>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          {[0,1,2,3].map(i => (
+            <div key={i} className="card p-5 h-[120px]">
+              <div className="w-10 h-10 bg-gray-200 rounded-lg mb-3" />
+              <div className="h-6 w-12 bg-gray-200 rounded mb-2" />
+              <div className="h-3 w-20 bg-gray-100 rounded" />
+            </div>
+          ))}
+        </div>
+        <div className="card p-5 h-[180px] bg-gray-50" />
+        <div className="card p-5 h-[200px] bg-gray-50" />
       </div>
     );
   }
+
+  // Detect "empty" state — no plan, no logs, no progress
+  const isEmpty = !data?.todaySession
+    && (data?.weeklyWorkouts?.length ?? 0) === 0
+    && (data?.progressLogs?.length ?? 0) === 0
+    && (data?.todayNutrition?.calories ?? 0) === 0;
 
   // Build "this week" session list: plan sessions + which ones have logs
   const planSessions: any[] = data?.weeklyWorkouts ?? [];
@@ -92,6 +112,48 @@ export default function DashboardPage() {
         </h1>
         <p className="text-gray-500">Veja como você está indo hoje</p>
       </div>
+
+      {/* Empty state — first-time user with no data yet */}
+      {isEmpty && (
+        <div className="card p-6 bg-gradient-to-br from-primary-50 to-blue-50 border-2 border-primary-100">
+          <h2 className="text-lg font-bold text-gray-900 mb-1">Bem-vindo! Vamos começar 🚀</h2>
+          <p className="text-sm text-gray-600 mb-5">
+            Em 3 passos rápidos você já está treinando com tudo personalizado.
+          </p>
+          <div className="space-y-3">
+            <Link href="/chat?agent=TRAINER" className="flex items-center gap-3 p-3 rounded-xl bg-white hover:shadow-sm transition-all">
+              <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Dumbbell size={18} className="text-blue-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900">1. Peça seu treino ao Personal Trainer</p>
+                <p className="text-xs text-gray-500">Ele monta um plano semanal automaticamente</p>
+              </div>
+              <ChevronRight size={16} className="text-gray-300" />
+            </Link>
+            <Link href="/chat?agent=NUTRITIONIST" className="flex items-center gap-3 p-3 rounded-xl bg-white hover:shadow-sm transition-all">
+              <div className="w-9 h-9 bg-primary-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Salad size={18} className="text-primary-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900">2. Crie sua dieta com a Nutricionista</p>
+                <p className="text-xs text-gray-500">Refeições e macros calculados pra você</p>
+              </div>
+              <ChevronRight size={16} className="text-gray-300" />
+            </Link>
+            <Link href="/drshape" className="flex items-center gap-3 p-3 rounded-xl bg-white hover:shadow-sm transition-all">
+              <div className="w-9 h-9 bg-pink-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Camera size={18} className="text-pink-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900">3. Faça sua avaliação com Dr. Shape</p>
+                <p className="text-xs text-gray-500">Análise corporal por foto pra acompanhar evolução</p>
+              </div>
+              <ChevronRight size={16} className="text-gray-300" />
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">

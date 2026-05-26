@@ -57,7 +57,27 @@ export default function NutritionPage() {
     }
   }
 
-  if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" /></div>;
+  if (loading) return (
+    <div className="space-y-4 animate-pulse">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="h-7 w-40 bg-gray-200 rounded mb-2" />
+          <div className="h-4 w-56 bg-gray-100 rounded" />
+        </div>
+        <div className="h-10 w-32 bg-gray-200 rounded-xl" />
+      </div>
+      <div className="card p-5 h-[120px] bg-gray-50" />
+      {[0,1,2].map(i => (
+        <div key={i} className="card p-5">
+          <div className="h-4 w-32 bg-gray-200 rounded mb-3" />
+          <div className="space-y-2">
+            <div className="h-3 w-full bg-gray-100 rounded" />
+            <div className="h-3 w-4/5 bg-gray-100 rounded" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div className="space-y-6 animate-fade-in">
