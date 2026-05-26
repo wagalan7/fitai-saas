@@ -60,14 +60,29 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
       sessionId: string;
       agentType: AgentType;
       content: string;
+      // Legacy single-image payload (kept for back-compat with older clients)
       imageBase64?: string;
       imageMimeType?: string;
+      // New multi-image payload — Dr Shape body evaluation needs 3+ photos
+      images?: Array<{ data: string; mimeType?: string }>;
     },
   ) {
-    const { sessionId, agentType, content, imageBase64, imageMimeType } = data;
+    const { sessionId, agentType, content } = data;
     const userId = client.userId;
 
-    const textForSave = imageBase64 ? `[Foto enviada] ${content || ''}`.trim() : content;
+    // Normalize the image payload — array first, fall back to legacy single image
+    const imageList: Array<{ data: string; mimeType: string }> = [];
+    if (Array.isArray(data.images) && data.images.length > 0) {
+      for (const img of data.images) {
+        if (img?.data) imageList.push({ data: img.data, mimeType: img.mimeType || 'image/jpeg' });
+      }
+    } else if (data.imageBase64) {
+      imageList.push({ data: data.imageBase64, mimeType: data.imageMimeType || 'image/jpeg' });
+    }
+
+    const textForSave = imageList.length
+      ? `[${imageList.length} foto${imageList.length > 1 ? 's' : ''} enviada${imageList.length > 1 ? 's' : ''}] ${content || ''}`.trim()
+      : content;
     await this.chatService.saveMessage(sessionId, 'USER', textForSave);
 
     const history = await this.chatService.getSessionMessages(sessionId, 20);
@@ -77,20 +92,14 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
         content: m.content,
       }));
 
-    // Build the last user message (with optional image)
-    if (imageBase64) {
-      const msgContent: Array<any> = [
-        {
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: imageMimeType || 'image/jpeg',
-            data: imageBase64,
-          },
-        },
-      ];
-      if (content?.trim()) msgContent.push({ type: 'text', text: content.trim() });
-      else msgContent.push({ type: 'text', text: 'Por favor, analise esta foto.' });
+    // Build the last user message (with optional images)
+    if (imageList.length > 0) {
+      const msgContent: Array<any> = imageList.map((img) => ({
+        type: 'image',
+        source: { type: 'base64', media_type: img.mimeType, data: img.data },
+      }));
+      const text = content?.trim() || 'Por favor, analise esta(s) foto(s).';
+      msgContent.push({ type: 'text', text });
       messages.push({ role: 'user', content: msgContent });
     } else {
       messages.push({ role: 'user', content });

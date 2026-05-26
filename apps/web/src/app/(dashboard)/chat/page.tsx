@@ -79,7 +79,7 @@ const AGENTS: Record<AgentType, { label: string; icon: React.ReactNode; color: s
     label: 'Avaliador Corporal',
     icon: <Camera size={18} />,
     color: 'text-pink-600 bg-pink-100',
-    welcome: 'Olá! Sou o Dr. Shape, seu especialista em avaliação corporal. Envie uma foto do seu corpo (frente, costas ou lateral) e farei uma análise completa da sua composição e evolução. 📸',
+    welcome: 'Olá! Sou o Dr. Shape, seu especialista em avaliação corporal. Para uma avaliação completa, envie 3 fotos: 1 de frente, 1 de costas e 1 de lateral. Com base nelas vou montar um novo plano de treino e dieta. 📸',
     supportsImage: true,
   },
 };
@@ -87,7 +87,8 @@ const AGENTS: Record<AgentType, { label: string; icon: React.ReactNode; color: s
 interface ChatMessage {
   role: string;
   content: string;
-  imagePreview?: string;
+  imagePreview?: string;        // legacy single-image (kept for back-compat)
+  imagePreviews?: string[];     // multi-image (Dr Shape body evaluation)
   streaming?: boolean;
   savedPlan?: 'saving' | 'saved' | 'error';
   saveError?: string;
@@ -173,8 +174,9 @@ function ChatPageInner() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
-  const [selectedImage, setSelectedImage] = useState<File | null>(null);
-  const [imagePreview, setImagePreview] = useState<string | null>(null);
+  // Multi-image support: Dr Shape needs front/back/side photos for a real
+  // body-composition read. Other agents currently don't use images.
+  const [selectedImages, setSelectedImages] = useState<Array<{ file: File; preview: string }>>([]);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const autoSentRef = useRef(false);
@@ -189,8 +191,7 @@ function ChatPageInner() {
     });
     setSessionId(data.id);
     setMessages([{ role: 'assistant', content: AGENTS[agent].welcome }]);
-    setSelectedImage(null);
-    setImagePreview(null);
+    setSelectedImages([]);
 
     if (fromDrShape && !autoSentRef.current) {
       autoSentRef.current = true;
@@ -407,27 +408,43 @@ function ChatPageInner() {
   }
 
   async function handleImageSelect(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+    const files = Array.from(e.target.files || []);
     e.target.value = '';
-    if (!file) return;
-    try {
-      const { blob, dataUrl } = await compressImage(file);
-      // Wrap compressed blob in a File so downstream code stays the same.
-      const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
-      setSelectedImage(compressed);
-      setImagePreview(dataUrl);
-    } catch {
-      // Fallback: send original if compression fails for some weird format.
-      setSelectedImage(file);
-      const reader = new FileReader();
-      reader.onloadend = () => setImagePreview(reader.result as string);
-      reader.readAsDataURL(file);
+    if (files.length === 0) return;
+
+    const MAX_IMAGES = 5;
+    const remaining = Math.max(0, MAX_IMAGES - selectedImages.length);
+    const toAdd = files.slice(0, remaining);
+    if (files.length > remaining) {
+      toast.info(`Máximo de ${MAX_IMAGES} fotos por mensagem.`);
     }
+
+    const processed = await Promise.all(
+      toAdd.map(async (file) => {
+        try {
+          const { blob, dataUrl } = await compressImage(file);
+          const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+          return { file: compressed, preview: dataUrl };
+        } catch {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const r = new FileReader();
+            r.onloadend = () => resolve(r.result as string);
+            r.onerror = reject;
+            r.readAsDataURL(file);
+          });
+          return { file, preview: dataUrl };
+        }
+      }),
+    );
+    setSelectedImages((prev) => [...prev, ...processed]);
   }
 
-  function clearImage() {
-    setSelectedImage(null);
-    setImagePreview(null);
+  function removeImage(idx: number) {
+    setSelectedImages((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  function clearImages() {
+    setSelectedImages([]);
   }
 
   async function savePlan(index: number) {
@@ -480,28 +497,42 @@ function ChatPageInner() {
   }
 
   async function sendMessage() {
-    const hasImage = !!selectedImage;
+    const hasImages = selectedImages.length > 0;
     const hasText = input.trim().length > 0;
-    if ((!hasText && !hasImage) || isStreaming || !sessionId || !socket) return;
+    if ((!hasText && !hasImages) || isStreaming || !sessionId || !socket) return;
+
+    // Dr Shape (EVALUATOR) needs at least 3 photos (front/back/side) to give
+    // a meaningful composition read. Warn but still allow override via confirm.
+    if (activeAgent === 'EVALUATOR' && hasImages && selectedImages.length < 3) {
+      const ok = window.confirm(
+        `Para uma avaliação corporal completa, o ideal é enviar 3 fotos: 1 de frente, 1 de costas e 1 de lateral. Você enviou ${selectedImages.length}. Continuar mesmo assim?`,
+      );
+      if (!ok) return;
+    }
 
     const content = input.trim();
     setInput('');
 
-    if (hasImage && imagePreview) {
-      // Show image preview in user bubble
-      setMessages((prev) => [...prev, { role: 'user', content, imagePreview }]);
+    if (hasImages) {
+      const previews = selectedImages.map((s) => s.preview);
+      setMessages((prev) => [...prev, { role: 'user', content, imagePreviews: previews }]);
 
-      // Convert to base64 (strip data URL prefix)
-      const base64 = imagePreview.split(',')[1];
-      const mimeType = selectedImage!.type || 'image/jpeg';
+      const images = selectedImages.map((s) => ({
+        data: s.preview.split(',')[1],
+        mimeType: s.file.type || 'image/jpeg',
+      }));
 
-      clearImage();
+      const defaultText =
+        activeAgent === 'EVALUATOR' && images.length >= 3
+          ? 'Por favor, faça uma avaliação corporal completa a partir destas fotos (frente, costas e lateral).'
+          : 'Por favor, analise esta(s) foto(s).';
+
+      clearImages();
       socket.emit('message', {
         sessionId,
         agentType: activeAgent,
-        content: content || 'Por favor, analise esta foto.',
-        imageBase64: base64,
-        imageMimeType: mimeType,
+        content: content || defaultText,
+        images,
       });
     } else {
       setMessages((prev) => [...prev, { role: 'user', content }]);
@@ -577,13 +608,24 @@ function ChatPageInner() {
                   </span>
                 )}
                 <div className={msg.role === 'user' ? 'chat-bubble-user max-w-xs' : 'chat-bubble-ai'}>
-                  {msg.imagePreview && (
+                  {(msg.imagePreviews && msg.imagePreviews.length > 0) ? (
+                    <div className="flex gap-1.5 flex-wrap mb-2">
+                      {msg.imagePreviews.map((src, idx) => (
+                        <img
+                          key={idx}
+                          src={src}
+                          alt={`Foto ${idx + 1}`}
+                          className="rounded-lg w-20 h-20 object-cover"
+                        />
+                      ))}
+                    </div>
+                  ) : msg.imagePreview ? (
                     <img
                       src={msg.imagePreview}
                       alt="Foto enviada"
                       className="rounded-lg mb-2 max-w-[220px] max-h-[280px] object-cover"
                     />
-                  )}
+                  ) : null}
                   {msg.role === 'assistant' ? (
                     <MessageContent content={msg.content} agentType={activeAgent} streaming={msg.streaming} />
                   ) : (
@@ -650,18 +692,34 @@ function ChatPageInner() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Image preview */}
-        {imagePreview && (
+        {/* Image previews (multi) */}
+        {selectedImages.length > 0 && (
           <div className="px-4 pb-2">
-            <div className="relative inline-block">
-              <img src={imagePreview} alt="Preview" className="h-20 rounded-lg object-cover border border-gray-200" />
-              <button
-                onClick={clearImage}
-                className="absolute -top-2 -right-2 w-5 h-5 bg-gray-700 text-white rounded-full flex items-center justify-center hover:bg-red-500 transition-colors"
-              >
-                <X size={10} />
-              </button>
+            <div className="flex gap-2 flex-wrap">
+              {selectedImages.map((img, i) => (
+                <div key={i} className="relative">
+                  <img
+                    src={img.preview}
+                    alt={`Foto ${i + 1}`}
+                    className="h-20 w-20 rounded-lg object-cover border border-gray-200"
+                  />
+                  <button
+                    onClick={() => removeImage(i)}
+                    className="absolute -top-2 -right-2 w-5 h-5 bg-gray-700 text-white rounded-full flex items-center justify-center hover:bg-red-500 transition-colors"
+                    aria-label="Remover foto"
+                  >
+                    <X size={10} />
+                  </button>
+                </div>
+              ))}
             </div>
+            {activeAgent === 'EVALUATOR' && (
+              <p className={`text-xs mt-2 ${selectedImages.length >= 3 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                {selectedImages.length >= 3
+                  ? `✓ ${selectedImages.length} foto(s) prontas para avaliação`
+                  : `${selectedImages.length}/3 fotos · adicione ${3 - selectedImages.length} para avaliação completa (frente, costas e lateral)`}
+              </p>
+            )}
           </div>
         )}
 
@@ -674,6 +732,7 @@ function ChatPageInner() {
                   ref={fileInputRef}
                   type="file"
                   accept="image/*"
+                  multiple
                   className="hidden"
                   onChange={handleImageSelect}
                 />
@@ -707,7 +766,7 @@ function ChatPageInner() {
             />
             <button
               onClick={sendMessage}
-              disabled={(!input.trim() && !selectedImage) || isStreaming || !sessionId || !socket || !connected}
+              disabled={(!input.trim() && selectedImages.length === 0) || isStreaming || !sessionId || !socket || !connected}
               className="w-11 h-11 flex-shrink-0 bg-primary-500 hover:bg-primary-600 disabled:opacity-40 text-white rounded-xl flex items-center justify-center transition-colors"
             >
               <Send size={16} />
