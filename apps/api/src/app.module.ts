@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { ScheduleModule } from '@nestjs/schedule';
 import { HealthController } from './health.controller';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { AuthModule } from './auth/auth.module';
@@ -14,12 +15,14 @@ import { ProgressModule } from './progress/progress.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { ProfileModule } from './profile/profile.module';
 import { PushModule } from './push/push.module';
+import { RemindersModule } from './reminders/reminders.module';
 import { DatabaseModule } from './common/database.module';
 
 @Module({
   controllers: [HealthController],
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
     DatabaseModule,
     AuthModule,
@@ -34,6 +37,7 @@ import { DatabaseModule } from './common/database.module';
     DashboardModule,
     ProfileModule,
     PushModule,
+    RemindersModule,
   ],
 })
 export class AppModule {}

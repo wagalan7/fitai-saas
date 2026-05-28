@@ -18,6 +18,10 @@ export interface UpdateProfileDto {
   injuries?: string[];
   dietaryRestrictions?: string[];
   availableEquipment?: string[];
+  // Push reminder preferences
+  workoutRemindersEnabled?: boolean;
+  workoutReminderHour?: number; // 0-23
+  timezone?: string;             // IANA tz name
 }
 
 function validateCPF(cpf: string): boolean {
@@ -85,7 +89,8 @@ export class ProfileService {
   async updateProfile(userId: string, dto: UpdateProfileDto) {
     const { name, cpf, phone, address, genderIdentity, age, weightKg, heightCm,
       fitnessGoal, fitnessLevel, workoutsPerWeek, workoutDuration,
-      injuries, dietaryRestrictions, availableEquipment } = dto;
+      injuries, dietaryRestrictions, availableEquipment,
+      workoutRemindersEnabled, workoutReminderHour, timezone } = dto;
 
     // Validate CPF if provided
     if (cpf) {
@@ -129,6 +134,14 @@ export class ProfileService {
     if (injuries !== undefined) profileData.injuries = injuries;
     if (dietaryRestrictions !== undefined) profileData.dietaryRestrictions = dietaryRestrictions;
     if (availableEquipment !== undefined) profileData.availableEquipment = availableEquipment;
+    if (workoutRemindersEnabled !== undefined) profileData.workoutRemindersEnabled = !!workoutRemindersEnabled;
+    if (workoutReminderHour !== undefined) {
+      const h = Number(workoutReminderHour);
+      if (Number.isInteger(h) && h >= 0 && h <= 23) profileData.workoutReminderHour = h;
+    }
+    if (timezone !== undefined && typeof timezone === 'string' && timezone.length < 64) {
+      profileData.timezone = timezone;
+    }
 
     await this.prisma.userProfile.upsert({
       where: { userId },

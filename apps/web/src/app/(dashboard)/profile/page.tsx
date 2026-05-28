@@ -312,10 +312,45 @@ export default function ProfilePage() {
 function PushNotificationsSection() {
   const [status, setStatus] = useState<'loading' | 'unsupported' | 'denied' | 'granted' | 'default' | 'unsubscribed'>('loading');
   const [busy, setBusy] = useState(false);
+  // Reminder preferences (load from /profile)
+  const [remindersEnabled, setRemindersEnabled] = useState(true);
+  const [reminderHour, setReminderHour] = useState(8);
+  const [savingPrefs, setSavingPrefs] = useState(false);
 
   useEffect(() => {
     getNotificationStatus().then((s) => setStatus(s));
+    // Pull current reminder preferences so the dropdowns show the right value.
+    import('@/lib/api').then(({ api }) =>
+      api.get('/profile').then(({ data }) => {
+        if (typeof data?.profile?.workoutRemindersEnabled === 'boolean') {
+          setRemindersEnabled(data.profile.workoutRemindersEnabled);
+        }
+        if (typeof data?.profile?.workoutReminderHour === 'number') {
+          setReminderHour(data.profile.workoutReminderHour);
+        }
+      }).catch(() => {}),
+    );
   }, []);
+
+  async function savePrefs(next: { remindersEnabled?: boolean; reminderHour?: number }) {
+    setSavingPrefs(true);
+    try {
+      const { api } = await import('@/lib/api');
+      // Detect user's IANA timezone from the browser; backend stores it so the
+      // cron knows what "8am" means for this user.
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Sao_Paulo';
+      await api.patch('/profile', {
+        workoutRemindersEnabled: next.remindersEnabled ?? remindersEnabled,
+        workoutReminderHour: next.reminderHour ?? reminderHour,
+        timezone: tz,
+      });
+      toast.success('Preferência salva.');
+    } catch {
+      toast.error('Não foi possível salvar a preferência.');
+    } finally {
+      setSavingPrefs(false);
+    }
+  }
 
   async function turnOn() {
     setBusy(true);
@@ -374,6 +409,55 @@ function PushNotificationsSection() {
           </button>
         )}
       </div>
+
+      {/* Workout reminder preferences — only show when notifications are on */}
+      {status === 'granted' && (
+        <div className="mt-5 pt-5 border-t border-gray-100 space-y-3">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-gray-900">Lembrete diário de treino</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Receba um push nos dias em que você tem treino marcado.
+              </p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+              <input
+                type="checkbox"
+                checked={remindersEnabled}
+                disabled={savingPrefs}
+                onChange={(e) => {
+                  setRemindersEnabled(e.target.checked);
+                  savePrefs({ remindersEnabled: e.target.checked });
+                }}
+                className="sr-only peer"
+              />
+              <div className="w-10 h-6 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary-500"></div>
+            </label>
+          </div>
+
+          {remindersEnabled && (
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm text-gray-700">Horário do lembrete</p>
+              <select
+                value={reminderHour}
+                disabled={savingPrefs}
+                onChange={(e) => {
+                  const h = parseInt(e.target.value, 10);
+                  setReminderHour(h);
+                  savePrefs({ reminderHour: h });
+                }}
+                className="bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+              >
+                {Array.from({ length: 24 }, (_, h) => (
+                  <option key={h} value={h}>
+                    {String(h).padStart(2, '0')}:00
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

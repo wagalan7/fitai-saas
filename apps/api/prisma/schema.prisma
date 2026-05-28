@@ -90,6 +90,11 @@ model UserProfile {
   foodPreferences    String[]
   availableEquipment String[]
   dailyRoutine       Json?
+  // Push reminder preferences — sent by the backend cron (RemindersService)
+  workoutRemindersEnabled Boolean   @default(true)
+  workoutReminderHour     Int       @default(8)              // 0-23, local-time hour
+  timezone                String    @default("America/Sao_Paulo")
+  lastWorkoutReminderAt   DateTime?
   updatedAt          DateTime       @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
