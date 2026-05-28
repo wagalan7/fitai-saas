@@ -23,7 +23,7 @@ const BOTTOM_NAV = [
   { href: '/chat', icon: MessageSquare, label: 'Chat' },
   { href: '/workouts', icon: Dumbbell, label: 'Treinos' },
   { href: '/nutrition', icon: Salad, label: 'Nutrição' },
-  { href: '/progress', icon: TrendingUp, label: 'Progresso' },
+  { href: '/profile', icon: User, label: 'Perfil' },
 ];
 
 export default function Sidebar() {
