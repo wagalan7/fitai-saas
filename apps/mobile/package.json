@@ -1,0 +1,22 @@
+{
+  "name": "@fitness/mobile",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Capacitor iOS wrapper around the FitAI web app — exists to ship on the App Store and unlock native APIs (HealthKit, Apple Watch sync, native push).",
+  "scripts": {
+    "sync": "cap sync ios",
+    "open:ios": "cap open ios",
+    "run:ios": "cap run ios"
+  },
+  "dependencies": {
+    "@capacitor/cli": "^6.1.2",
+    "@capacitor/core": "^6.1.2",
+    "@capacitor/ios": "^6.1.2",
+    "@capacitor/app": "^6.0.1",
+    "@capacitor/haptics": "^6.0.1",
+    "@capacitor/preferences": "^6.0.2",
+    "@capacitor/push-notifications": "^6.0.2",
+    "@capacitor/status-bar": "^6.0.1",
+    "@perfood/capacitor-healthkit": "^1.3.2"
+  }
+}

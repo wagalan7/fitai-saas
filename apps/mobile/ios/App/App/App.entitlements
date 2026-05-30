@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+		Capabilities for the iOS shell. HealthKit is the load-bearing one —
+		Apple Watch workout sync flows through it. Push is here so background
+		reminders from the backend can deliver natively (APNs) once we wire
+		@capacitor/push-notifications on the JS side.
+
+		NOTE: After running `cap sync ios`, open Xcode → Signing & Capabilities
+		and confirm "HealthKit" + "Push Notifications" are listed. The file
+		below is the source of truth, but Xcode also needs the project setting
+		CODE_SIGN_ENTITLEMENTS=App/App.entitlements (set automatically when
+		you add a capability through the UI).
+	-->
+	<key>com.apple.developer.healthkit</key>
+	<true/>
+	<key>com.apple.developer.healthkit.access</key>
+	<array/>
+	<key>aps-environment</key>
+	<string>development</string>
+</dict>
+</plist>

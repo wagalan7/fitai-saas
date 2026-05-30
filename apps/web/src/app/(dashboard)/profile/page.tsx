@@ -7,6 +7,7 @@ import { toast } from '@/lib/toast';
 import { User, Phone, MapPin, CreditCard, Calendar, Save, CheckCircle, AlertCircle, Edit3, Brain, Trash2, ChevronDown, ChevronUp, Bell, BellOff } from 'lucide-react';
 import { enablePush, disablePush, getNotificationStatus } from '@/lib/push';
 import { needsIOSInstall } from '@/lib/platform';
+import { isNative, requestHealthAuth, getPlatform } from '@/lib/native';
 
 const AGENT_LABELS: Record<string, string> = {
   TRAINER: '🏋️ Personal Trainer',
@@ -526,6 +527,62 @@ function PushNotificationsSection() {
           <TestReminderButton />
         </div>
       )}
+
+      {/* HealthKit / Apple Watch — only renders inside the Capacitor iOS shell.
+          On web/PWA it returns null because the bridge can't work there. */}
+      <AppleWatchSection />
+    </div>
+  );
+}
+
+/**
+ * Apple Watch / HealthKit integration card. Only shown when the page is
+ * loaded inside the native iOS shell. The button kicks the system permission
+ * sheet; everything else (background sync, log mapping) happens later via
+ * native plugin calls — this card exists primarily to get the user past the
+ * one-time auth prompt.
+ */
+function AppleWatchSection() {
+  const [show, setShow] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setShow(isNative() && getPlatform() === 'ios');
+  }, []);
+
+  if (!show) return null;
+
+  const onConnect = async () => {
+    setBusy(true);
+    try {
+      const ok = await requestHealthAuth();
+      if (ok) {
+        toast.success('Apple Saúde conectado. Seus treinos do Watch vão sincronizar em segundos.');
+      } else {
+        toast.error('Não foi possível conectar com o Apple Saúde. Confere nas Configurações > Privacidade.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-6 bg-white rounded-2xl p-5 border border-gray-100 shadow-sm">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="font-semibold text-gray-900">Apple Watch & Saúde</h3>
+          <p className="text-sm text-gray-500 mt-1">
+            Sincroniza treinos do seu Apple Watch e fecha os anéis quando você treina pelo FitAI.
+          </p>
+        </div>
+        <button
+          onClick={onConnect}
+          disabled={busy}
+          className="bg-gray-900 hover:bg-black text-white text-sm font-medium px-4 py-2 rounded-xl disabled:opacity-50"
+        >
+          {busy ? 'Conectando…' : 'Conectar'}
+        </button>
+      </div>
     </div>
   );
 }
