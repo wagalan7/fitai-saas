@@ -6,6 +6,7 @@ import { useAuthStore } from '@/store/auth.store';
 import { toast } from '@/lib/toast';
 import { User, Phone, MapPin, CreditCard, Calendar, Save, CheckCircle, AlertCircle, Edit3, Brain, Trash2, ChevronDown, ChevronUp, Bell, BellOff } from 'lucide-react';
 import { enablePush, disablePush, getNotificationStatus } from '@/lib/push';
+import { needsIOSInstall } from '@/lib/platform';
 
 const AGENT_LABELS: Record<string, string> = {
   TRAINER: '🏋️ Personal Trainer',
@@ -349,12 +350,14 @@ function TestReminderButton() {
 function PushNotificationsSection() {
   const [status, setStatus] = useState<'loading' | 'unsupported' | 'denied' | 'granted' | 'default' | 'unsubscribed'>('loading');
   const [busy, setBusy] = useState(false);
+  const [iosNeedsInstall, setIosNeedsInstall] = useState(false);
   // Reminder preferences (load from /profile)
   const [remindersEnabled, setRemindersEnabled] = useState(true);
   const [reminderHour, setReminderHour] = useState(8);
   const [savingPrefs, setSavingPrefs] = useState(false);
 
   useEffect(() => {
+    setIosNeedsInstall(needsIOSInstall());
     getNotificationStatus().then((s) => setStatus(s));
     // Pull current reminder preferences so the dropdowns show the right value.
     import('@/lib/api').then(({ api }) =>
@@ -417,6 +420,32 @@ function PushNotificationsSection() {
   }
 
   if (status === 'loading') return null;
+
+  // iOS Safari blocks web push unless the app is installed to the Home Screen.
+  // Show actionable instructions instead of the misleading "unsupported" toast.
+  if (iosNeedsInstall) {
+    return (
+      <div className="card p-6 mt-6 border border-amber-200 bg-amber-50/50">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center flex-shrink-0">
+            <Bell size={18} className="text-amber-600" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-gray-900">Ativar lembretes no iPhone</h3>
+            <p className="text-sm text-gray-600 mt-1">
+              No iPhone, os lembretes só funcionam se o app estiver instalado na tela de início.
+              É rápido:
+            </p>
+            <ol className="text-sm text-gray-700 mt-3 space-y-1.5 list-decimal pl-5">
+              <li>Toque no botão <strong>Compartilhar</strong> do Safari (quadrado com seta pra cima, na barra inferior).</li>
+              <li>Role e toque em <strong>Adicionar à Tela de Início</strong>.</li>
+              <li>Abra o FitAI pelo novo ícone e volte aqui pra ativar.</li>
+            </ol>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="card p-6 mt-6">

@@ -114,21 +114,36 @@ export default function DashboardPage() {
         <p className="text-gray-500">Veja como você está indo hoje</p>
       </div>
 
-      {/* Empty state — first-time user with no data yet */}
+      {/* Empty state — first-time user with no data yet.
+          Dr Shape is now step 1 because finishing the evaluation auto-regenerates
+          both the workout plan AND the nutrition plan via the multi-agent
+          orchestration — so a new user can be fully set up in a single step.
+          Trainer/Nutricionista become refinement options. */}
       {isEmpty && (
         <div className="card p-6 bg-gradient-to-br from-primary-50 to-blue-50 border-2 border-primary-100">
           <h2 className="text-lg font-bold text-gray-900 mb-1">Bem-vindo! Vamos começar 🚀</h2>
           <p className="text-sm text-gray-600 mb-5">
-            Em 3 passos rápidos você já está treinando com tudo personalizado.
+            O jeito mais rápido: faça a avaliação com Dr. Shape — ele já monta seu treino e dieta automaticamente.
           </p>
           <div className="space-y-3">
+            <Link href="/drshape" className="flex items-center gap-3 p-3 rounded-xl bg-white hover:shadow-md ring-2 ring-pink-200 transition-all">
+              <div className="w-9 h-9 bg-pink-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                <Camera size={18} className="text-pink-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-gray-900">1. Avaliação com Dr. Shape <span className="text-pink-600">(recomendado)</span></p>
+                <p className="text-xs text-gray-500">3 fotos + seus objetivos → treino + dieta personalizados em 1 passo</p>
+              </div>
+              <ChevronRight size={16} className="text-gray-300" />
+            </Link>
+            <p className="text-xs text-gray-400 px-1 pt-1">Ou monte separadamente:</p>
             <Link href="/chat?agent=TRAINER" className="flex items-center gap-3 p-3 rounded-xl bg-white hover:shadow-sm transition-all">
               <div className="w-9 h-9 bg-blue-100 rounded-lg flex items-center justify-center flex-shrink-0">
                 <Dumbbell size={18} className="text-blue-500" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900">1. Peça seu treino ao Personal Trainer</p>
-                <p className="text-xs text-gray-500">Ele monta um plano semanal automaticamente</p>
+                <p className="text-sm font-semibold text-gray-900">Treino com Personal Trainer</p>
+                <p className="text-xs text-gray-500">Plano semanal personalizado via chat</p>
               </div>
               <ChevronRight size={16} className="text-gray-300" />
             </Link>
@@ -137,18 +152,8 @@ export default function DashboardPage() {
                 <Salad size={18} className="text-primary-500" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900">2. Crie sua dieta com a Nutricionista</p>
+                <p className="text-sm font-semibold text-gray-900">Dieta com a Nutricionista</p>
                 <p className="text-xs text-gray-500">Refeições e macros calculados pra você</p>
-              </div>
-              <ChevronRight size={16} className="text-gray-300" />
-            </Link>
-            <Link href="/drshape" className="flex items-center gap-3 p-3 rounded-xl bg-white hover:shadow-sm transition-all">
-              <div className="w-9 h-9 bg-pink-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                <Camera size={18} className="text-pink-500" />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-900">3. Faça sua avaliação com Dr. Shape</p>
-                <p className="text-xs text-gray-500">Análise corporal por foto pra acompanhar evolução</p>
               </div>
               <ChevronRight size={16} className="text-gray-300" />
             </Link>

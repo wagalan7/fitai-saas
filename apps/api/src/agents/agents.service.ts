@@ -21,7 +21,10 @@ const SYSTEM_PROMPTS: Record<AgentType, string> = {
 
 const CHAT_MODEL = 'llama-3.3-70b-versatile';      // chat streaming — no think tags, Portuguese-native
 const GEN_MODEL = 'llama-3.3-70b-versatile';      // plan generation — same model, reliable JSON + no think tags
-const EXTRACT_MODEL = 'llama-3.1-8b-instant';     // text→JSON extraction — 30k TPM limit, fast
+// Extraction was on 8b-instant (6k TPM on free tier) which silently 413'd
+// for full-week workout plans (~8k+ tokens). Switched to the same 70b model
+// we use for generation — higher TPM, native JSON mode, costs ~2s more.
+const EXTRACT_MODEL = 'llama-3.3-70b-versatile';
 const VISION_MODEL = 'meta-llama/llama-4-scout-17b-16e-instruct';
 
 @Injectable()
@@ -41,7 +44,15 @@ export class AgentsService {
         return await fn();
       } catch (err: any) {
         const msg = err?.message || '';
-        const isRetryable = msg.includes('503') || msg.includes('529') || msg.includes('rate') || msg.includes('overloaded');
+        // 413 = TPM rate limit on Groq (counted as "request too large"),
+        // 429 = generic rate limit, 503/529 = overload. All transient.
+        const isRetryable =
+          msg.includes('503') ||
+          msg.includes('529') ||
+          msg.includes('429') ||
+          msg.includes('413') ||
+          msg.includes('rate') ||
+          msg.includes('overloaded');
         if (isRetryable && i < retries - 1) {
           console.log(`[retry] attempt ${i + 1} failed, retrying in ${delayMs}ms...`);
           await new Promise((r) => setTimeout(r, delayMs));
@@ -200,19 +211,24 @@ ${recentProgress
     // 8-10k chars. Truncating at 3k cuts off the back half of the week, which
     // is exactly the "partial save" the user reported on mobile/long replies.
     const truncated = text.slice(0, 12000);
-    const completion = await this.groq.chat.completions.create({
-      model: EXTRACT_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: `Converta a descrição de treino para JSON. Inclua TODOS os dias mencionados, sem omitir nenhum. Responda APENAS com JSON, sem markdown:
+    const completion = await this.withRetry(() =>
+      this.groq.chat.completions.create({
+        model: EXTRACT_MODEL,
+        // Force JSON-only output — bypasses the heuristic extractJson() and
+        // eliminates a class of "extracted partial / extra prose" failures.
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: `Converta a descrição de treino para JSON. Inclua TODOS os dias mencionados, sem omitir nenhum. Responda APENAS com JSON válido:
 {"name":"Nome","description":"Desc","sessions":[{"name":"Segunda-feira — Peito","dayOfWeek":1,"muscleGroups":["peito"],"estimatedTime":60,"exercises":[{"order":1,"name":"Supino Reto","sets":4,"reps":"8-12","restSeconds":90,"notes":"dica"}]}]}
 dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
-        },
-        { role: 'user', content: truncated },
-      ],
-      max_tokens: 6000,
-    });
+          },
+          { role: 'user', content: truncated },
+        ],
+        max_tokens: 6000,
+      }),
+    );
 
     const raw = completion.choices[0]?.message?.content || '';
     return this.extractJson(raw);
@@ -220,18 +236,21 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
 
   async extractNutritionFromText(text: string): Promise<any> {
     const truncated = text.slice(0, 12000);
-    const completion = await this.groq.chat.completions.create({
-      model: EXTRACT_MODEL,
-      messages: [
-        {
-          role: 'system',
-          content: `Converta a descrição de dieta para JSON. Inclua TODAS as refeições mencionadas. Responda APENAS com JSON, sem markdown:
+    const completion = await this.withRetry(() =>
+      this.groq.chat.completions.create({
+        model: EXTRACT_MODEL,
+        response_format: { type: 'json_object' },
+        messages: [
+          {
+            role: 'system',
+            content: `Converta a descrição de dieta para JSON. Inclua TODAS as refeições mencionadas. Responda APENAS com JSON válido:
 {"calories":2200,"proteinG":160,"carbsG":220,"fatG":73,"meals":[{"name":"Café da Manhã","timeOfDay":"breakfast","calories":450,"proteinG":30,"carbsG":55,"fatG":10,"foods":[{"name":"Aveia","quantityG":80,"calories":300,"proteinG":10,"carbsG":54,"fatG":6,"alternatives":["granola"]}]}]}`,
-        },
-        { role: 'user', content: truncated },
-      ],
-      max_tokens: 6000,
-    });
+          },
+          { role: 'user', content: truncated },
+        ],
+        max_tokens: 6000,
+      }),
+    );
 
     const raw = completion.choices[0]?.message?.content || '';
     return this.extractJson(raw);
