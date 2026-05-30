@@ -30,7 +30,11 @@ export class RemindersService {
 
   @Cron(CronExpression.EVERY_HOUR)
   async runWorkoutReminders() {
-    if (!this.push.isEnabled()) return;
+    if (!this.push.isEnabled()) {
+      this.logger.warn('Cron tick skipped: push not enabled (missing VAPID keys)');
+      return;
+    }
+    this.logger.log('Cron tick: scanning workout reminder candidates');
 
     // Candidates: users with reminders ON + at least one push subscription.
     // We filter by active plan and timezone-hour inside the loop because
@@ -48,6 +52,7 @@ export class RemindersService {
       },
     });
 
+    this.logger.log(`Cron candidates: ${profiles.length}`);
     if (profiles.length === 0) return;
 
     const now = new Date();
@@ -102,6 +107,65 @@ export class RemindersService {
     }
 
     if (sent > 0) this.logger.log(`Workout reminders dispatched: ${sent}`);
+  }
+
+  /**
+   * Manually fire a reminder for one user right now — used by the "Test"
+   * button in the profile UI to verify end-to-end push delivery without
+   * waiting for the cron and without caring about the configured hour.
+   *
+   * Returns a diagnostic object explaining what happened so the UI can
+   * surface useful errors (no subscription, no plan, no session today, etc).
+   */
+  async triggerForUserNow(userId: string): Promise<{
+    ok: boolean;
+    reason?: string;
+    sent?: number;
+  }> {
+    if (!this.push.isEnabled()) {
+      return { ok: false, reason: 'push_disabled' };
+    }
+
+    const profile = await this.prisma.userProfile.findUnique({
+      where: { userId },
+      select: { timezone: true, user: { select: { pushSubscriptions: { select: { id: true }, take: 1 } } } },
+    });
+    if (!profile) return { ok: false, reason: 'no_profile' };
+    if (!profile.user?.pushSubscriptions?.length) {
+      return { ok: false, reason: 'no_subscription' };
+    }
+
+    const now = new Date();
+    const local = this.getLocalDateParts(now, profile.timezone);
+
+    const plan = await this.prisma.workoutPlan.findFirst({
+      where: { userId, isActive: true },
+      select: {
+        sessions: {
+          where: { dayOfWeek: local.dayOfWeek },
+          select: { name: true, estimatedTime: true, muscleGroups: true },
+          take: 1,
+        },
+      },
+    });
+
+    const session = plan?.sessions?.[0];
+    const title = 'Hora do treino 💪';
+    const body = session
+      ? `Hoje: ${(session.muscleGroups?.length ? session.muscleGroups.slice(0, 3).join(', ') : session.name)} · ~${session.estimatedTime || 60}min`
+      : 'Teste de lembrete: você ainda não tem treino marcado para hoje, mas o push está chegando 👍';
+
+    const result: any = await this.push.sendToUser(userId, {
+      title,
+      body,
+      url: '/workouts',
+    });
+    const sent = result?.sent ?? 0;
+    if (sent > 0) {
+      this.logger.log(`Manual reminder sent to user=${userId} (sessionToday=${!!session})`);
+      return { ok: true, sent };
+    }
+    return { ok: false, reason: 'push_send_returned_zero', sent };
   }
 
   /** Returns { hour: 0-23, dayOfWeek: 0-6 } in the given IANA timezone. */

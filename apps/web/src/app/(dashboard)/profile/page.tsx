@@ -309,6 +309,43 @@ export default function ProfilePage() {
   );
 }
 
+function TestReminderButton() {
+  const [busy, setBusy] = useState(false);
+
+  async function testNow() {
+    setBusy(true);
+    try {
+      const { api } = await import('@/lib/api');
+      const { data } = await api.post('/reminders/test-now', {}, { timeout: 20000 });
+      if (data?.ok && (data?.sent ?? 0) > 0) {
+        toast.success('Push enviado! Veja sua notificação.');
+      } else if (data?.reason === 'no_subscription') {
+        toast.error('Nenhuma inscrição de push registrada. Reative as notificações.');
+      } else if (data?.reason === 'push_disabled') {
+        toast.error('Push desabilitado no servidor (VAPID não configurado).');
+      } else if (data?.reason === 'push_send_returned_zero') {
+        toast.error('Push não foi entregue. A inscrição pode ter expirado — reative as notificações.');
+      } else {
+        toast.error('Falha ao testar o lembrete.');
+      }
+    } catch {
+      toast.error('Erro ao chamar o servidor.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      onClick={testNow}
+      disabled={busy}
+      className="w-full mt-2 bg-gray-50 hover:bg-gray-100 disabled:opacity-50 text-gray-700 text-sm font-medium py-2.5 rounded-lg border border-gray-200 transition-colors"
+    >
+      {busy ? 'Enviando teste...' : 'Testar lembrete agora'}
+    </button>
+  );
+}
+
 function PushNotificationsSection() {
   const [status, setStatus] = useState<'loading' | 'unsupported' | 'denied' | 'granted' | 'default' | 'unsubscribed'>('loading');
   const [busy, setBusy] = useState(false);
@@ -456,6 +493,8 @@ function PushNotificationsSection() {
               </select>
             </div>
           )}
+
+          <TestReminderButton />
         </div>
       )}
     </div>
