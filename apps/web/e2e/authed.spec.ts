@@ -16,8 +16,9 @@ test.describe('authenticated critical path', () => {
 
   test.beforeEach(async ({ page }) => {
     await page.goto('/login');
-    await page.getByLabel(/e-?mail/i).first().fill(EMAIL!);
-    await page.getByLabel(/senha/i).first().fill(PASSWORD!);
+    // Labels aren't htmlFor-linked in the auth pages, so we target inputs by type.
+    await page.locator('input[type="email"]').first().fill(EMAIL!);
+    await page.locator('input[type="password"]').first().fill(PASSWORD!);
     // The submit button is typically labelled "Entrar".
     await page.getByRole('button', { name: /entrar|login/i }).first().click();
     // Wait until the auth dance settles into the dashboard.

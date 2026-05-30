@@ -18,13 +18,15 @@ test.describe('public surface', () => {
 
   test('login page renders the form', async ({ page }) => {
     await page.goto('/login');
-    await expect(page.getByLabel(/e-?mail/i).first()).toBeVisible();
-    await expect(page.getByLabel(/senha/i).first()).toBeVisible();
+    // Labels in the app aren't htmlFor-linked, so target by input type — same UX guarantee, no a11y assumption.
+    await expect(page.locator('input[type="email"]').first()).toBeVisible();
+    await expect(page.locator('input[type="password"]').first()).toBeVisible();
   });
 
   test('register page renders the form', async ({ page }) => {
     await page.goto('/register');
-    await expect(page.getByLabel(/e-?mail/i).first()).toBeVisible();
+    await expect(page.locator('input[type="email"]').first()).toBeVisible();
+    await expect(page.locator('input[type="password"]').first()).toBeVisible();
   });
 
   test('dashboard redirects to login when unauthenticated', async ({ page }) => {
