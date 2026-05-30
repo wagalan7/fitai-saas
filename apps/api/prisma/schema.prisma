@@ -95,6 +95,9 @@ model UserProfile {
   workoutReminderHour     Int       @default(8)              // 0-23, local-time hour
   timezone                String    @default("America/Sao_Paulo")
   lastWorkoutReminderAt   DateTime?
+  // Streak-saver push: nags the user at 20h local when they have a 2+ day
+  // workout streak going AND haven't logged today. Dedup so we don't spam.
+  lastStreakSaverAt       DateTime?
   updatedAt          DateTime       @updatedAt
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)

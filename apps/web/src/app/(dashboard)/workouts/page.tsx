@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import useSWR, { mutate } from 'swr';
+import { swrConfig } from '@/lib/swr';
 import { api } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import { onPlanUpdated } from '@/lib/events';
@@ -20,70 +22,73 @@ function getDayLabel(session: any): string {
   return DAYS[session.dayOfWeek % 7] ?? '?';
 }
 
+const PLAN_CACHE_KEY = 'fitai-workout-plan-cache';
+
+function savePlanToCache(plan: any) {
+  try { localStorage.setItem(PLAN_CACHE_KEY, JSON.stringify({ plan, ts: Date.now() })); } catch {}
+}
+
+function loadPlanFromCache(): any | null {
+  try {
+    const raw = localStorage.getItem(PLAN_CACHE_KEY);
+    if (!raw) return null;
+    const { plan, ts } = JSON.parse(raw);
+    // Cache válido por 7 dias para fallback offline.
+    if (Date.now() - ts > 7 * 24 * 60 * 60 * 1000) return null;
+    return plan;
+  } catch { return null; }
+}
+
 export default function WorkoutsPage() {
-  const [plan, setPlan] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  // SWR replaces the manual useEffect/loadPlan flow:
+  //   - First visit: shows skeleton until fetch completes.
+  //   - Subsequent visits in the same session: shows cached plan instantly,
+  //     revalidates in background → near-zero perceived latency.
+  //   - `fallbackData` from localStorage means even cold reloads on flaky
+  //     networks render the last-known plan immediately.
+  const cachedFallback = typeof window !== 'undefined' ? loadPlanFromCache() : null;
+  const {
+    data: plan,
+    error: planError,
+    isLoading: planLoading,
+    mutate: mutatePlan,
+  } = useSWR<any>('/workouts/plan', {
+    ...swrConfig,
+    fallbackData: cachedFallback ?? undefined,
+    onSuccess: (data) => { if (data) savePlanToCache(data); },
+  });
+
+  const { data: todayLogs } = useSWR<Record<string, string>>('/workouts/today-logs', swrConfig);
+
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [loggingSessionId, setLoggingSessionId] = useState<string | null>(null);
   const [logForm, setLogForm] = useState<{ duration: string; rating: number; notes: string }>({ duration: '', rating: 0, notes: '' });
   const [exerciseLogs, setExerciseLogs] = useState<Array<{ exerciseName: string; sets: Array<{ reps: string; weightKg: string }> }>>([]);
-  // maps sessionId → logId (so we can delete)
-  const [logSuccess, setLogSuccess] = useState<Record<string, string>>({});
-  const [isOffline, setIsOffline] = useState(false);
-
-  const PLAN_CACHE_KEY = 'fitai-workout-plan-cache';
-
-  function savePlanToCache(plan: any) {
-    try { localStorage.setItem(PLAN_CACHE_KEY, JSON.stringify({ plan, ts: Date.now() })); } catch {}
-  }
-
-  function loadPlanFromCache(): any | null {
-    try {
-      const raw = localStorage.getItem(PLAN_CACHE_KEY);
-      if (!raw) return null;
-      const { plan, ts } = JSON.parse(raw);
-      // Cache válido por 7 dias
-      if (Date.now() - ts > 7 * 24 * 60 * 60 * 1000) return null;
-      return plan;
-    } catch { return null; }
-  }
+  // Optimistic overlay on top of SWR data: maps sessionId → logId.
+  // We seed from SWR's today-logs and apply local mutations on top.
+  const [logOverrides, setLogOverrides] = useState<Record<string, string | null>>({});
+  const logSuccess: Record<string, string> = (() => {
+    const merged: Record<string, string> = { ...(todayLogs || {}) };
+    for (const [k, v] of Object.entries(logOverrides)) {
+      if (v === null) delete merged[k]; else merged[k] = v;
+    }
+    return merged;
+  })();
+  // Offline = we have no SWR data AND the request errored, but localStorage had a plan.
+  const isOffline = !!(planError && cachedFallback && !plan);
+  const loading = planLoading && !plan;
 
   useEffect(() => {
-    loadPlan();
-    // Refetch when the chat auto-regen (post Dr Shape) emits a workout update
+    // Refetch when the chat auto-regen (post Dr Shape) emits a workout update.
     const off = onPlanUpdated('workout', () => {
-      loadPlan();
+      mutatePlan();
+      mutate('/workouts/today-logs');
       toast.success('Plano de treino atualizado a partir da nova avaliação!');
     });
     return off;
-  }, []);
-
-  async function loadPlan() {
-    setLoading(true);
-    try {
-      const [planRes, logsRes] = await Promise.all([
-        api.get('/workouts/plan'),
-        api.get('/workouts/today-logs'),
-      ]);
-      const fetchedPlan = planRes.data;
-      setPlan(fetchedPlan);
-      if (fetchedPlan) savePlanToCache(fetchedPlan);  // salva no cache
-      if (logsRes.data && typeof logsRes.data === 'object') {
-        setLogSuccess(logsRes.data);
-      }
-    } catch {
-      // Tenta carregar do cache quando offline
-      const cached = loadPlanFromCache();
-      if (cached) {
-        setPlan(cached);
-        setIsOffline(true);
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
+  }, [mutatePlan]);
 
   function openLogForm(session: any) {
     setLoggingSessionId(loggingSessionId === session.id ? null : session.id);
@@ -130,9 +135,10 @@ export default function WorkoutsPage() {
         })),
     };
 
-    // Optimistic update: close form + mark as done immediately
+    // Optimistic update: close form + mark as done immediately.
+    // `logOverrides` overlays SWR data; sync to server happens below.
     const optimisticId = `optimistic-${Date.now()}`;
-    setLogSuccess((prev) => ({ ...prev, [sessionId]: optimisticId }));
+    setLogOverrides((prev) => ({ ...prev, [sessionId]: optimisticId }));
     setLoggingSessionId(null);
     setLogForm({ duration: '', rating: 0, notes: '' });
     setExerciseLogs([]);
@@ -140,16 +146,16 @@ export default function WorkoutsPage() {
 
     try {
       const { data } = await api.post('/workouts/log', payload);
-      // Replace optimistic id with real one (needed for delete)
-      setLogSuccess((prev) => ({ ...prev, [sessionId]: data.id }));
+      setLogOverrides((prev) => ({ ...prev, [sessionId]: data.id }));
+      // Revalidate today-logs so the next session navigation matches server truth.
+      mutate('/workouts/today-logs');
     } catch (err: any) {
-      // Revert optimistic state
-      setLogSuccess((prev) => {
+      // Revert optimistic state.
+      setLogOverrides((prev) => {
         const next = { ...prev };
         delete next[sessionId];
         return next;
       });
-      // Reopen the form so the user can retry
       setLoggingSessionId(sessionId);
       toast.error(err?.response?.data?.message || 'Erro ao registrar treino. Tente novamente.');
     }
@@ -158,22 +164,17 @@ export default function WorkoutsPage() {
   async function deleteLog(sessionId: string) {
     const logId = logSuccess[sessionId];
     if (!logId) return;
-    // Skip if optimistic id (still pending creation)
     if (logId.startsWith('optimistic-')) return;
 
-    // Optimistic remove
-    setLogSuccess((prev) => {
-      const updated = { ...prev };
-      delete updated[sessionId];
-      return updated;
-    });
+    // Optimistic remove (null sentinel hides it on top of SWR data).
+    setLogOverrides((prev) => ({ ...prev, [sessionId]: null }));
     toast.success('Registro excluído.');
 
     try {
       await api.delete(`/workouts/log/${logId}`);
+      mutate('/workouts/today-logs');
     } catch (err: any) {
-      // Revert
-      setLogSuccess((prev) => ({ ...prev, [sessionId]: logId }));
+      setLogOverrides((prev) => ({ ...prev, [sessionId]: logId }));
       toast.error(err?.response?.data?.message || 'Erro ao excluir registro.');
     }
   }
@@ -183,9 +184,10 @@ export default function WorkoutsPage() {
     setGenerateError(null);
     try {
       const { data } = await api.post('/workouts/generate');
-      setPlan(data);
-      savePlanToCache(data);  // salva no cache
-      setIsOffline(false);    // limpa modo offline
+      // Push the freshly-generated plan into SWR cache so the UI updates
+      // without an extra network round-trip.
+      mutatePlan(data, { revalidate: false });
+      savePlanToCache(data);
       toast.success('Plano de treino gerado com sucesso!');
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Erro ao gerar plano. Tente novamente.';

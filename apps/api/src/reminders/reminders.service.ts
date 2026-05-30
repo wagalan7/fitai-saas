@@ -107,6 +107,105 @@ export class RemindersService {
     }
 
     if (sent > 0) this.logger.log(`Workout reminders dispatched: ${sent}`);
+
+    // Piggyback streak-saver pass on the same tick — same TZ math, same
+    // push infrastructure, no extra cron registration noise.
+    await this.runStreakSavers(now).catch((err) =>
+      this.logger.warn(`Streak saver pass failed: ${err?.message}`),
+    );
+  }
+
+  /**
+   * STREAK SAVER — at 20h local time, nags users with a 2+ day workout
+   * streak who haven't logged today yet. Streak math here mirrors what
+   * the dashboard shows: consecutive days of workout logs, ending today
+   * or yesterday.
+   *
+   * Cheap: profiles already filtered to "has push subscriptions", then we
+   * skip per-user when local hour != 20 BEFORE any heavier work.
+   */
+  private async runStreakSavers(now: Date) {
+    const STREAK_HOUR = 20;
+    const profiles = await this.prisma.userProfile.findMany({
+      where: { user: { pushSubscriptions: { some: {} } } },
+      select: {
+        userId: true,
+        timezone: true,
+        lastStreakSaverAt: true,
+      },
+    });
+
+    let sent = 0;
+    for (const p of profiles) {
+      try {
+        const local = this.getLocalDateParts(now, p.timezone);
+        if (local.hour !== STREAK_HOUR) continue;
+
+        // 18h dedup so we only fire once per evening even if the cron
+        // double-runs across a restart.
+        if (p.lastStreakSaverAt) {
+          const ageHours = (now.getTime() - p.lastStreakSaverAt.getTime()) / 3_600_000;
+          if (ageHours < 18) continue;
+        }
+
+        // Pull recent logs in user's TZ. We grab the last 60 days of logs
+        // (more than enough for any realistic streak) and group by local
+        // YYYY-MM-DD.
+        const since = new Date(now.getTime() - 60 * 86_400_000);
+        const logs = await this.prisma.workoutLog.findMany({
+          where: { userId: p.userId, completedAt: { gte: since } },
+          select: { completedAt: true },
+          orderBy: { completedAt: 'desc' },
+        });
+
+        const dayKeys = new Set<string>(
+          logs.map((l) => this.localDayKey(l.completedAt, p.timezone)),
+        );
+        const todayKey = this.localDayKey(now, p.timezone);
+        if (dayKeys.has(todayKey)) continue; // already logged today — no nag
+
+        // Compute streak ending at yesterday.
+        let streak = 0;
+        let cursor = new Date(now.getTime() - 86_400_000); // yesterday
+        while (dayKeys.has(this.localDayKey(cursor, p.timezone))) {
+          streak++;
+          cursor = new Date(cursor.getTime() - 86_400_000);
+        }
+        if (streak < 2) continue; // not worth nagging for a 1-day "streak"
+
+        const result: any = await this.push.sendToUser(p.userId, {
+          title: `🔥 ${streak} dias em chamas`,
+          body: `Sua sequência de ${streak} dias está em risco — bate só o registro de hoje pra manter.`,
+          url: '/workouts',
+        });
+        if (result?.sent > 0) {
+          sent++;
+          await this.prisma.userProfile.update({
+            where: { userId: p.userId },
+            data: { lastStreakSaverAt: now },
+          });
+        }
+      } catch (err: any) {
+        this.logger.warn(`Streak saver failed for user=${p.userId}: ${err?.message}`);
+      }
+    }
+
+    if (sent > 0) this.logger.log(`Streak savers dispatched: ${sent}`);
+  }
+
+  /** YYYY-MM-DD for the given moment in the user's timezone. */
+  private localDayKey(d: Date, timeZone: string): string {
+    try {
+      const fmt = new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      });
+      return fmt.format(d); // en-CA = ISO-like "YYYY-MM-DD"
+    } catch {
+      return d.toISOString().slice(0, 10);
+    }
   }
 
   /**

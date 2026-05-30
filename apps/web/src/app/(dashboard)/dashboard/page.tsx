@@ -114,6 +114,13 @@ export default function DashboardPage() {
         <p className="text-gray-500">Veja como você está indo hoje</p>
       </div>
 
+      {/* Streak hero — shown when user has a real streak going (>=2 days).
+          This is the single highest-retention surface in a fitness app:
+          users protect a streak even when they wouldn't otherwise train. */}
+      {(data?.streak ?? 0) >= 2 && (
+        <StreakHero streak={data!.streak} hasLoggedToday={hasLoggedToday} hasSessionToday={!!data?.todaySession} />
+      )}
+
       {/* Empty state — first-time user with no data yet.
           Dr Shape is now step 1 because finishing the evaluation auto-regenerates
           both the workout plan AND the nutrition plan via the multi-agent
@@ -299,6 +306,55 @@ export default function DashboardPage() {
         <QuickAction href="/chat?agent=EVALUATOR" icon={<Camera size={24} className="text-pink-500" />} title="Dr. Shape" desc="Avaliação corporal" bg="bg-pink-50 hover:bg-pink-100" />
       </div>
     </div>
+  );
+}
+
+/**
+ * StreakHero — emphasizes the user's training streak.
+ * Three modes based on context:
+ *  - At-risk (has streak, has session today, hasn't logged yet) → urgent warning
+ *  - Safe (logged today OR no session today) → celebration
+ *  - Milestone reached (3/7/14/30/60/100) → extra emphasis in copy
+ */
+function StreakHero({ streak, hasLoggedToday, hasSessionToday }: { streak: number; hasLoggedToday: boolean; hasSessionToday: boolean }) {
+  const atRisk = hasSessionToday && !hasLoggedToday;
+  const milestone = [3, 7, 14, 30, 60, 100, 365].includes(streak);
+
+  const bg = atRisk
+    ? 'bg-gradient-to-br from-amber-50 to-orange-50 border-amber-200'
+    : 'bg-gradient-to-br from-orange-50 to-pink-50 border-orange-200';
+
+  const title = atRisk
+    ? `${streak} dias em chamas — não pare hoje!`
+    : milestone
+      ? `${streak} dias seguidos! 🎉`
+      : `${streak} dias seguidos 🔥`;
+
+  const sub = atRisk
+    ? 'Você tem treino marcado pra hoje. Bate o registro e mantém a sequência.'
+    : hasLoggedToday
+      ? 'Hoje você manteve a sequência. Continua assim amanhã.'
+      : milestone
+        ? 'Marca histórica desbloqueada. Cada dia daqui pra frente conta o dobro.'
+        : 'Continue treinando para crescer essa sequência.';
+
+  return (
+    <Link href={atRisk ? '/workouts' : '/progress'} className={`block card p-5 border-2 ${bg} hover:shadow-md transition-all`}>
+      <div className="flex items-center gap-4">
+        <div className="w-14 h-14 bg-white rounded-2xl flex items-center justify-center flex-shrink-0 shadow-sm">
+          <span className="text-3xl">🔥</span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-xl font-bold text-gray-900">{title}</p>
+          <p className="text-sm text-gray-600 mt-0.5">{sub}</p>
+        </div>
+        {atRisk && (
+          <div className="hidden sm:flex items-center gap-1 text-amber-700 text-xs font-semibold bg-amber-100 px-2.5 py-1 rounded-full flex-shrink-0">
+            Em risco
+          </div>
+        )}
+      </div>
+    </Link>
   );
 }
 

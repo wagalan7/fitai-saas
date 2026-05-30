@@ -1,37 +1,35 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import useSWR from 'swr';
+import { swrConfig } from '@/lib/swr';
 import { api } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import { onPlanUpdated } from '@/lib/events';
 import { Salad, RefreshCw, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 
 export default function NutritionPage() {
-  const [plan, setPlan] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  // SWR-backed plan: instant render from cache on revisit, background revalidate.
+  const {
+    data: plan,
+    isLoading: planLoading,
+    mutate: mutatePlan,
+  } = useSWR<any>('/nutrition/plan', swrConfig);
+
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [loggedMeals, setLoggedMeals] = useState<Set<string>>(new Set());
 
+  const loading = planLoading && !plan;
+
   useEffect(() => {
-    loadPlan();
     const off = onPlanUpdated('nutrition', () => {
-      loadPlan();
+      mutatePlan();
       toast.success('Plano alimentar atualizado a partir da nova avaliação!');
     });
     return off;
-  }, []);
-
-  async function loadPlan() {
-    setLoading(true);
-    try {
-      const { data } = await api.get('/nutrition/plan');
-      setPlan(data);
-    } finally {
-      setLoading(false);
-    }
-  }
+  }, [mutatePlan]);
 
   async function logMeal(meal: any) {
     try {
@@ -54,7 +52,7 @@ export default function NutritionPage() {
     setGenerateError(null);
     try {
       const { data } = await api.post('/nutrition/generate');
-      setPlan(data);
+      mutatePlan(data, { revalidate: false });
       toast.success('Plano alimentar gerado com sucesso!');
     } catch (err: any) {
       const msg = err?.response?.data?.message || 'Erro ao gerar plano. Tente novamente.';
