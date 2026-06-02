@@ -279,9 +279,18 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
     }
   }
 
-  async generateWorkoutPlan(userId: string) {
-    console.log(`[generateWorkoutPlan] start userId=${userId} model=${GEN_MODEL}`);
+  async generateWorkoutPlan(userId: string, preferences?: string) {
+    console.log(
+      `[generateWorkoutPlan] start userId=${userId} model=${GEN_MODEL} hasPrefs=${!!preferences?.trim()}`,
+    );
     const context = await this.buildContext(userId, AgentType.TRAINER);
+
+    // Preferences are a free-form note from the user ("treino longo: 5 peito +
+    // 3 tríceps", "foco em panturrilha"). We wrap them in a clearly-fenced
+    // block so the prompt's "PRIORIDADE MÁXIMA" rule can latch onto it.
+    const prefsBlock = preferences?.trim()
+      ? `\n\nPREFERÊNCIAS PARA ESTA GERAÇÃO (prioridade máxima — siga ao pé da letra):\n"""\n${preferences.trim().slice(0, 600)}\n"""\n`
+      : '';
 
     const completion = await this.withRetry(() =>
       this.groq.chat.completions.create({
@@ -290,10 +299,14 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
           { role: 'system', content: WORKOUT_GENERATION_PROMPT },
           {
             role: 'user',
-            content: `${context}\n\nCrie um plano de treino semanal completo e personalizado para este usuário. Responda APENAS com o JSON.`,
+            content: `${context}${prefsBlock}\n\nCrie um plano de treino semanal completo e personalizado para este usuário. Responda APENAS com o JSON.`,
           },
         ],
-        max_tokens: 4096,
+        // Bumped from 4096 — a 6-day split with 6+ exercises per session
+        // hits ~5k output tokens. 4096 was silently truncating the JSON
+        // on richer plans, which the model then "recovered" from by
+        // shrinking exercise counts to fit.
+        max_tokens: 6144,
       }),
     );
 

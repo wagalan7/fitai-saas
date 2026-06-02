@@ -90,8 +90,8 @@ export class WorkoutsService {
     return newPlan;
   }
 
-  async generatePlan(userId: string) {
-    const planData = await this.agentsService.generateWorkoutPlan(userId);
+  async generatePlan(userId: string, preferences?: string) {
+    const planData = await this.agentsService.generateWorkoutPlan(userId, preferences);
     return this.replacePlan(userId, planData, 'generate');
   }
 

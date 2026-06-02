@@ -62,6 +62,10 @@ export default function WorkoutsPage() {
 
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
+  // Free-form prefs threaded into the backend prompt at generation time.
+  // The trainer prompt has a "PRIORIDADE MÁXIMA" rule for this block.
+  const [prefsOpen, setPrefsOpen] = useState(false);
+  const [preferences, setPreferences] = useState('');
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
   const [loggingSessionId, setLoggingSessionId] = useState<string | null>(null);
   const [logForm, setLogForm] = useState<{ duration: string; rating: number; notes: string }>({ duration: '', rating: 0, notes: '' });
@@ -183,7 +187,8 @@ export default function WorkoutsPage() {
     setGenerating(true);
     setGenerateError(null);
     try {
-      const { data } = await api.post('/workouts/generate');
+      const body = preferences.trim() ? { preferences: preferences.trim() } : {};
+      const { data } = await api.post('/workouts/generate', body);
       // Push the freshly-generated plan into SWR cache so the UI updates
       // without an extra network round-trip.
       mutatePlan(data, { revalidate: false });
@@ -238,6 +243,41 @@ export default function WorkoutsPage() {
           <RefreshCw size={16} className={generating ? 'animate-spin' : ''} />
           {generating ? 'Gerando...' : plan ? 'Regenerar' : 'Gerar Treino'}
         </button>
+      </div>
+
+      {/* Preferences for generation — collapsed by default so it doesn't
+          add noise for users who just want the default plan. Open it to
+          push concrete instructions ("peito 5 + tríceps 3", "treino curto") */}
+      <div className="card p-4">
+        <button
+          type="button"
+          onClick={() => setPrefsOpen((v) => !v)}
+          className="w-full flex items-center justify-between text-sm font-medium text-gray-700"
+        >
+          <span className="flex items-center gap-2">
+            ⚙️ Preferências para gerar (opcional)
+            {preferences.trim() && (
+              <span className="text-xs bg-primary-100 text-primary-700 px-2 py-0.5 rounded-full">
+                {preferences.trim().length} chars
+              </span>
+            )}
+          </span>
+          {prefsOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </button>
+        {prefsOpen && (
+          <div className="mt-3">
+            <textarea
+              value={preferences}
+              onChange={(e) => setPreferences(e.target.value.slice(0, 600))}
+              placeholder='Ex: "treino longo, peito com 5 exercícios e tríceps com 3" ou "foco em panturrilha, evitar agachamento livre"'
+              className="w-full bg-white border border-gray-200 rounded-xl px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 min-h-[88px] resize-y"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Esse texto vai pro Trainer com prioridade máxima. Pode pedir contagens
+              exatas por grupo, exercícios a evitar, duração-alvo, etc.
+            </p>
+          </div>
+        )}
       </div>
 
       {generateError && (

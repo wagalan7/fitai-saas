@@ -2,7 +2,7 @@ import { Controller, Get, Post, Delete, Body, Param, UseGuards, Req, ForbiddenEx
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { WorkoutsService } from './workouts.service';
-import { LogWorkoutDto, SavePlanFromChatDto } from './workouts.dto';
+import { LogWorkoutDto, SavePlanFromChatDto, GeneratePlanDto } from './workouts.dto';
 
 @Controller('workouts')
 @UseGuards(JwtAuthGuard, ThrottlerGuard)
@@ -11,8 +11,13 @@ export class WorkoutsController {
 
   @Throttle({ default: { limit: 5, ttl: 3600000 } })
   @Post('generate')
-  generatePlan(@Req() req: { user: { id: string } }) {
-    return this.workoutsService.generatePlan(req.user.id);
+  generatePlan(
+    @Req() req: { user: { id: string } },
+    // Body is optional — existing callers (mobile, older web) post nothing,
+    // which is fine. Newer web sends { preferences }.
+    @Body() body: GeneratePlanDto = {},
+  ) {
+    return this.workoutsService.generatePlan(req.user.id, body.preferences);
   }
 
   @Throttle({ default: { limit: 5, ttl: 3600000 } })

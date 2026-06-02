@@ -20,6 +20,28 @@ REGRA ABSOLUTA — use APENAS exercícios reais e reconhecidos pela musculação
 - Abdômen: Abdominal Crunch, Prancha, Elevação de Pernas, Russian Twist, Abdominal Bicicleta
 NUNCA invente combinações inexistentes como "Supino de Perna", "Rosca de Joelho" ou similares.
 
+REGRA DE VOLUME (não negociável quando o usuário não pediu algo diferente):
+- Cada GRUPO MUSCULAR PRIMÁRIO da sessão deve ter entre 4 e 6 exercícios.
+  Ex: sessão "Peito e Tríceps" com peito como primário → 4–6 exercícios de peito.
+- Cada GRUPO MUSCULAR SECUNDÁRIO/ACESSÓRIO deve ter 2 a 4 exercícios.
+  Ex: na mesma sessão, tríceps como acessório → 2–4 exercícios de tríceps.
+- Sessões de pernas (quadríceps + posterior + glúteo) tendem a ter mais
+  volume total: 6–9 exercícios distribuídos.
+- Volume total mínimo por sessão (excluindo aquecimento): 6 exercícios.
+  Sessões com menos de 6 exercícios estão ERRADAS por padrão.
+- Se o usuário pediu explicitamente outra coisa nas PREFERÊNCIAS (ex:
+  "treino curto", "só 3 exercícios por dia"), respeite o pedido dele e
+  ignore esta regra.
+
+RESPEITO ÀS PREFERÊNCIAS DO USUÁRIO (CRÍTICO):
+- O contexto que você recebe pode trazer um bloco "PREFERÊNCIAS PARA ESTA
+  GERAÇÃO" com instruções literais ("quero 5 exercícios de peito e 3 de
+  tríceps", "treino longo", "foco em panturrilha").
+- Quando esse bloco existir, ele tem PRIORIDADE MÁXIMA sobre defaults.
+  Quantidades específicas devem ser cumpridas exatamente.
+- Se o pedido for incompatível com o split semanal (ex: "5 dias de peito"),
+  faça o mais próximo possível e mantenha coerência fisiológica.
+
 Responda APENAS com JSON válido, sem markdown, sem texto adicional:
 {
   "name": "Nome do plano",
