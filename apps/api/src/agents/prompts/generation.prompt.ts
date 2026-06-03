@@ -91,6 +91,13 @@ ADAPTAÇÃO POR SEXO:
 
 RESPEITO ÀS PREFERÊNCIAS:
 - Se o contexto trouxer "PREFERÊNCIAS PARA ESTA GERAÇÃO" com contagens explícitas (ex: "peito 5, tríceps 3"), aplique LITERALMENTE no campo targetExercises.
+- Se o usuário pedir "perna isolada" / "ombro isolado" / qualquer "X isolado", esse grupo TEM que ficar SOZINHO na sessão — nada de combinar com outro grupo grande.
+  Ex: "perna isolada na segunda" → segunda só pode ter quadríceps/posterior/glúteo/panturrilha. NÃO pode entrar peito, costas, ombro, braço.
+- Quando combinar grupos numa mesma sessão, use SOMENTE pares fisiológicos clássicos:
+  peito+tríceps, costas+bíceps, peito+costas (push-pull), ombro+braço,
+  perna+glúteo, perna+abdômen. NUNCA combine perna com costas, perna com peito, etc.
+- "muscleGroups" da sessão DEVE bater 1-pra-1 com as chaves de "targetExercises".
+  Se um grupo não tá em muscleGroups, ele NÃO PODE aparecer em targetExercises (e vice-versa).
 
 Responda APENAS com JSON válido, sem markdown:
 {
@@ -135,6 +142,13 @@ CONTAGEM (obrigatório):
 - Gere EXATAMENTE essa quantidade — nem a mais, nem a menos
 - Distribua de exercícios compostos (no início) pra isolados (no final)
 - order começa em 1 e segue sequencial
+
+RESTRIÇÃO DE GRUPO (CRÍTICA):
+- Use SOMENTE exercícios dos grupos listados em targetExercises do BLUEPRINT
+- Se targetExercises = {"perna": 6}, gere SÓ exercícios de perna. NÃO inclua
+  Remada, Supino, Puxada, Rosca, ou QUALQUER exercício de outro grupo
+- Cada exercício gerado precisa pertencer a UM dos grupos do BLUEPRINT.
+  Em caso de dúvida, escolha um exercício clássico daquele grupo.
 
 PARÂMETROS típicos:
 - Composto pesado: 3-4 séries × 6-10 reps × 90-120s descanso
