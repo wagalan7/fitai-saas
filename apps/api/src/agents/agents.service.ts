@@ -423,48 +423,64 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
       throw new Error('Skeleton returned no sessions');
     }
 
-    // --- PASS 2: expand each session in parallel ---------------------------
-    const expanded = await Promise.all(
-      skeleton.sessions.map(async (session, idx) => {
-        const blueprint = {
-          name: session.name,
-          dayOfWeek: session.dayOfWeek,
-          muscleGroups: session.muscleGroups,
-          targetExercises: session.targetExercises,
-          focus: session.focus,
-        };
-        const totalTargets = Object.values(session.targetExercises || {}).reduce(
-          (s, n) => s + (Number(n) || 0),
-          0,
+    // --- PASS 2: expand each session ---------------------------------------
+    // Originally fired all sessions in parallel — that hammered Groq's TPM
+    // budget on the free tier and every call retried 2-3x, blowing past the
+    // 60s client timeout. Batching in pairs gives us most of the wall-clock
+    // win (a 6-day split goes from 6 sequential calls to ~3 batches) without
+    // the rate-limit storm.
+    const expandSession = async (
+      session: typeof skeleton.sessions[number],
+      idx: number,
+    ): Promise<any[]> => {
+      const blueprint = {
+        name: session.name,
+        dayOfWeek: session.dayOfWeek,
+        muscleGroups: session.muscleGroups,
+        targetExercises: session.targetExercises,
+        focus: session.focus,
+      };
+      const totalTargets = Object.values(session.targetExercises || {}).reduce(
+        (s, n) => s + (Number(n) || 0),
+        0,
+      );
+      try {
+        const completion = await this.withRetry(() =>
+          this.groq.chat.completions.create({
+            model: GEN_MODEL,
+            response_format: { type: 'json_object' },
+            messages: [
+              { role: 'system', content: WORKOUT_SESSION_EXPANSION_PROMPT },
+              {
+                role: 'user',
+                content: `BLUEPRINT:\n${JSON.stringify(blueprint, null, 2)}\n\nGere EXATAMENTE ${totalTargets} exercícios respeitando os targetExercises por grupo. Responda APENAS com JSON.`,
+              },
+            ],
+            max_tokens: 2048,
+          }),
         );
-        try {
-          const completion = await this.withRetry(() =>
-            this.groq.chat.completions.create({
-              model: GEN_MODEL,
-              response_format: { type: 'json_object' },
-              messages: [
-                { role: 'system', content: WORKOUT_SESSION_EXPANSION_PROMPT },
-                {
-                  role: 'user',
-                  content: `BLUEPRINT:\n${JSON.stringify(blueprint, null, 2)}\n\nGere EXATAMENTE ${totalTargets} exercícios respeitando os targetExercises por grupo. Responda APENAS com JSON.`,
-                },
-              ],
-              max_tokens: 2048,
-            }),
-          );
-          const text = completion.choices[0]?.message?.content || '';
-          const parsed = this.extractJson(text) as { exercises: any[] };
-          return parsed.exercises || [];
-        } catch (err: any) {
-          console.error(
-            `[generateWorkoutPlanTwoPass] session ${idx} (${session.name}) failed: ${err?.message || err}`,
-          );
-          // Fail soft: empty exercises array still keeps the day visible in UI
-          // and the user can regenerate just that day later.
-          return [];
-        }
-      }),
-    );
+        const text = completion.choices[0]?.message?.content || '';
+        const parsed = this.extractJson(text) as { exercises: any[] };
+        return parsed.exercises || [];
+      } catch (err: any) {
+        console.error(
+          `[generateWorkoutPlanTwoPass] session ${idx} (${session.name}) failed: ${err?.message || err}`,
+        );
+        return [];
+      }
+    };
+
+    const BATCH_SIZE = 2;
+    const expanded: any[][] = new Array(skeleton.sessions.length);
+    for (let i = 0; i < skeleton.sessions.length; i += BATCH_SIZE) {
+      const batch = skeleton.sessions.slice(i, i + BATCH_SIZE);
+      const results = await Promise.all(
+        batch.map((s, j) => expandSession(s, i + j)),
+      );
+      results.forEach((r, j) => {
+        expanded[i + j] = r;
+      });
+    }
 
     const sessions = skeleton.sessions.map((s, i) => ({
       name: s.name,

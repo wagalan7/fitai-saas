@@ -188,7 +188,12 @@ export default function WorkoutsPage() {
     setGenerateError(null);
     try {
       const body = preferences.trim() ? { preferences: preferences.trim() } : {};
-      const { data } = await api.post('/workouts/generate', body);
+      // 2-pass generation can spike past 60s when Groq throttles and our
+      // backend retries the parallel session expansions. The plan is being
+      // saved server-side either way (replacePlan logs confirm) — bumping
+      // the client timeout to 3min stops the user from seeing a phantom
+      // error while the server is still writing.
+      const { data } = await api.post('/workouts/generate', body, { timeout: 180_000 });
       // Push the freshly-generated plan into SWR cache so the UI updates
       // without an extra network round-trip.
       mutatePlan(data, { revalidate: false });
