@@ -73,6 +73,60 @@ export interface NativeWorkout {
  * `@perfood/capacitor-healthkit` returns; if we swap plugins later
  * we'll adapt here, not in callers.
  */
+/**
+ * Asks for native push permission (iOS APNs), gets the device token, and
+ * POSTs it to the API so the backend can fan out alerts from
+ * /reminders, /workouts/generate, etc. Idempotent — runs at most once per
+ * boot (Capacitor caches the token; we de-dup in the API by token PK).
+ *
+ * Safe to call on web — returns null without prompting.
+ */
+let pushRegistrationStarted = false;
+export async function registerNativePush(
+  postDeviceToken: (token: string) => Promise<unknown>,
+): Promise<string | null> {
+  if (!isNative() || getPlatform() !== 'ios') return null;
+  if (pushRegistrationStarted) return null;
+  pushRegistrationStarted = true;
+
+  const Push = window.Capacitor?.Plugins?.PushNotifications;
+  if (!Push) return null;
+
+  try {
+    const perm = await Push.requestPermissions();
+    if (perm?.receive !== 'granted') return null;
+
+    return await new Promise<string | null>((resolve) => {
+      let resolved = false;
+      const settle = (token: string | null) => {
+        if (resolved) return;
+        resolved = true;
+        resolve(token);
+      };
+      Push.addListener('registration', async (info: { value: string }) => {
+        const token = info?.value;
+        if (!token) return settle(null);
+        try {
+          await postDeviceToken(token);
+        } catch (err) {
+          console.warn('[push] device-token POST failed', err);
+        }
+        settle(token);
+      });
+      Push.addListener('registrationError', (err: any) => {
+        console.warn('[push] registrationError', err);
+        settle(null);
+      });
+      Push.register();
+      // Belt & suspenders — if Apple is slow, don't keep the caller blocked
+      setTimeout(() => settle(null), 8000);
+    });
+  } catch (err) {
+    console.warn('[push] registerNativePush failed', err);
+    return null;
+  }
+}
+
 export async function fetchNativeWorkouts(
   startDate: Date,
   endDate: Date = new Date(),

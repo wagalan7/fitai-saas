@@ -1,11 +1,13 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import * as webpush from 'web-push';
 import { PrismaService } from '../common/prisma.service';
+import { ApnsConfig, loadApnsConfig, sendApns } from './apns.sender';
 
 @Injectable()
 export class PushService implements OnModuleInit {
   private readonly logger = new Logger(PushService.name);
   private enabled = false;
+  private apns: ApnsConfig | null = null;
 
   constructor(private prisma: PrismaService) {}
 
@@ -20,14 +22,45 @@ export class PushService implements OnModuleInit {
     } else {
       this.logger.warn('Web Push disabled (set VAPID_PUBLIC_KEY + VAPID_PRIVATE_KEY)');
     }
+
+    this.apns = loadApnsConfig();
+    if (this.apns) {
+      this.logger.log(
+        `APNs enabled (${this.apns.production ? 'production' : 'sandbox'}) topic=${this.apns.bundleId}`,
+      );
+    } else {
+      this.logger.warn(
+        'APNs disabled (set APNS_KEY + APNS_KEY_ID + APNS_TEAM_ID to enable)',
+      );
+    }
   }
 
   isEnabled() {
     return this.enabled;
   }
 
+  isApnsEnabled() {
+    return !!this.apns;
+  }
+
   getPublicKey() {
     return process.env.VAPID_PUBLIC_KEY || null;
+  }
+
+  /** Register a native APNs device token. Upsert on token — same device can
+   *  re-register after re-install or after switching user, so we steal it. */
+  async registerDeviceToken(userId: string, token: string, platform: 'ios' | 'android', bundleId?: string) {
+    if (!token || token.length < 20) throw new Error('Invalid device token');
+    return this.prisma.deviceToken.upsert({
+      where: { token },
+      create: { userId, token, platform, bundleId },
+      update: { userId, platform, bundleId },
+    });
+  }
+
+  async unregisterDeviceToken(userId: string, token: string) {
+    await this.prisma.deviceToken.deleteMany({ where: { userId, token } });
+    return { unregistered: true };
   }
 
   async subscribe(
@@ -54,29 +87,58 @@ export class PushService implements OnModuleInit {
   }
 
   /**
-   * Sends a push notification to all subscriptions of a given user.
-   * Silently removes expired/invalid subscriptions (410/404).
+   * Fan-out push to every channel the user has registered: VAPID web push
+   * subscriptions AND native APNs device tokens. Expired/invalid endpoints
+   * are silently pruned so the DB stays clean.
    */
   async sendToUser(userId: string, payload: { title: string; body: string; url?: string }) {
-    if (!this.enabled) return { sent: 0, skipped: 'disabled' as const };
-    const subs = await this.prisma.pushSubscription.findMany({ where: { userId } });
-    let sent = 0;
-    for (const s of subs) {
-      try {
-        await webpush.sendNotification(
-          { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
-          JSON.stringify(payload),
-        );
-        sent++;
-      } catch (err: any) {
-        const status = err?.statusCode;
-        if (status === 404 || status === 410) {
-          await this.prisma.pushSubscription.delete({ where: { id: s.id } }).catch(() => {});
-        } else {
-          this.logger.warn(`Push failed (${status}): ${err?.message}`);
+    let webSent = 0;
+    let apnsSent = 0;
+
+    // --- web push ---------------------------------------------------------
+    if (this.enabled) {
+      const subs = await this.prisma.pushSubscription.findMany({ where: { userId } });
+      for (const s of subs) {
+        try {
+          await webpush.sendNotification(
+            { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+            JSON.stringify(payload),
+          );
+          webSent++;
+        } catch (err: any) {
+          const status = err?.statusCode;
+          if (status === 404 || status === 410) {
+            await this.prisma.pushSubscription.delete({ where: { id: s.id } }).catch(() => {});
+          } else {
+            this.logger.warn(`Web push failed (${status}): ${err?.message}`);
+          }
         }
       }
     }
-    return { sent };
+
+    // --- native APNs ------------------------------------------------------
+    if (this.apns) {
+      const tokens = await this.prisma.deviceToken.findMany({
+        where: { userId, platform: 'ios' },
+      });
+      // Parallel — APNs HTTP/2 multiplexes over a single connection so we
+      // don't pay per-request handshake cost.
+      const results = await Promise.all(
+        tokens.map((t) =>
+          sendApns(this.apns!, t.token, payload).then((r) => ({ t, r })),
+        ),
+      );
+      for (const { t, r } of results) {
+        if (r.ok) apnsSent++;
+        else if (r.shouldDelete) {
+          await this.prisma.deviceToken.delete({ where: { id: t.id } }).catch(() => {});
+          this.logger.log(`Pruned dead APNs token (${r.reason})`);
+        } else if (r.status !== 0) {
+          this.logger.warn(`APNs failed (${r.status} ${r.reason})`);
+        }
+      }
+    }
+
+    return { sent: webSent + apnsSent, webSent, apnsSent };
   }
 }

@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, Post, Req, UseGuards } from '@nestjs/common';
-import { IsObject, IsString } from 'class-validator';
+import { IsIn, IsObject, IsOptional, IsString } from 'class-validator';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PushService } from './push.service';
 
@@ -10,6 +10,16 @@ class SubscribeDto {
 
 class UnsubscribeDto {
   @IsString() endpoint!: string;
+}
+
+class DeviceTokenDto {
+  @IsString() token!: string;
+  @IsIn(['ios', 'android']) platform!: 'ios' | 'android';
+  @IsOptional() @IsString() bundleId?: string;
+}
+
+class DeviceTokenDeleteDto {
+  @IsString() token!: string;
 }
 
 @Controller('push')
@@ -30,6 +40,21 @@ export class PushController {
   @Delete('subscribe')
   unsubscribe(@Req() req: any, @Body() body: UnsubscribeDto) {
     return this.push.unsubscribe(req.user.id, body.endpoint);
+  }
+
+  /**
+   * Native device-token registration. Called from the Capacitor shell after
+   * the user grants notification permission and PushNotifications fires the
+   * `registration` event with an APNs token.
+   */
+  @Post('device-token')
+  registerDeviceToken(@Req() req: any, @Body() body: DeviceTokenDto) {
+    return this.push.registerDeviceToken(req.user.id, body.token, body.platform, body.bundleId);
+  }
+
+  @Delete('device-token')
+  unregisterDeviceToken(@Req() req: any, @Body() body: DeviceTokenDeleteDto) {
+    return this.push.unregisterDeviceToken(req.user.id, body.token);
   }
 
   @Post('test')
