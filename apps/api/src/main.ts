@@ -31,8 +31,28 @@ async function bootstrap() {
     }),
   );
 
+  // FRONTEND_URL can be a comma-separated list so the API authorizes both
+  // the web app (Next.js, normally same-origin via rewrite) AND any clients
+  // hitting the API host directly — the Capacitor iOS shell, plus the
+  // browser bypassing the Next proxy on long endpoints like
+  // /workouts/generate where Next's internal undici timeout drops the
+  // socket. Any *.up.railway.app is also waved through so preview deploys
+  // and the auto-generated production slug work without env churn.
+  const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:3000')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: (origin, cb) => {
+      if (!origin) return cb(null, true); // same-origin / curl / native
+      if (allowedOrigins.includes(origin)) return cb(null, true);
+      try {
+        if (/\.up\.railway\.app$/.test(new URL(origin).hostname)) {
+          return cb(null, true);
+        }
+      } catch {}
+      cb(new Error(`CORS blocked: ${origin}`));
+    },
     credentials: true,
   });
 

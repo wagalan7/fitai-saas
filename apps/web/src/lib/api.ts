@@ -21,6 +21,17 @@ export const apiDirectBase =
     ? `${process.env.NEXT_PUBLIC_API_URL}/api`
     : '/api';
 
+export function getStoredToken(): string | null {
+  try {
+    const raw = typeof window === 'undefined' ? null : localStorage.getItem('fitai-auth');
+    if (!raw) return null;
+    const { state } = JSON.parse(raw);
+    return state?.token ?? null;
+  } catch {
+    return null;
+  }
+}
+
 function getStored(): { token: string | null; refreshToken: string | null } {
   try {
     const raw = localStorage.getItem('fitai-auth');

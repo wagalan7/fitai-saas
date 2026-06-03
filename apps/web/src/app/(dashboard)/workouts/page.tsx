@@ -3,7 +3,8 @@
 import { useEffect, useState } from 'react';
 import useSWR, { mutate } from 'swr';
 import { swrConfig } from '@/lib/swr';
-import { api } from '@/lib/api';
+import axios from 'axios';
+import { api, apiDirectBase, getStoredToken } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import { onPlanUpdated } from '@/lib/events';
 import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play, CheckCircle, Star, Trash2 } from 'lucide-react';
@@ -188,12 +189,17 @@ export default function WorkoutsPage() {
     setGenerateError(null);
     try {
       const body = preferences.trim() ? { preferences: preferences.trim() } : {};
-      // 2-pass generation can spike past 60s when Groq throttles and our
-      // backend retries the parallel session expansions. The plan is being
-      // saved server-side either way (replacePlan logs confirm) — bumping
-      // the client timeout to 3min stops the user from seeing a phantom
-      // error while the server is still writing.
-      const { data } = await api.post('/workouts/generate', body, { timeout: 180_000 });
+      // Bypass the Next.js /api rewrite for this one endpoint: Next's
+      // internal proxy uses undici with a fixed timeout and drops the
+      // socket with "hang up" around 30s, while 2-pass generation can
+      // take 30-60s. Hitting the API host directly skips that proxy
+      // entirely. CORS on the API is configured to allow this origin.
+      const token = getStoredToken();
+      const { data } = await axios.post(`${apiDirectBase}/workouts/generate`, body, {
+        timeout: 180_000,
+        withCredentials: true,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
       // Push the freshly-generated plan into SWR cache so the UI updates
       // without an extra network round-trip.
       mutatePlan(data, { revalidate: false });
