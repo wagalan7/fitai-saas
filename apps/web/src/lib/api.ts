@@ -1,25 +1,25 @@
 import axios, { AxiosRequestConfig } from 'axios';
 
-// In production we bypass the Next.js rewrite and hit the API service
-// directly. The rewrite was dropping connections on long requests
-// (workout generation hits 30-50s) with "socket hang up", because
-// Next's built-in proxy has an internal undici timeout we can't tune.
-// Calling the API host directly skips that layer entirely.
-//
-// CORS is already set on the API (enableCors with FRONTEND_URL), and
-// the Capacitor shell loads the web app under the same origin as the
-// PWA so this works there too. For local dev we still use /api so the
-// rewrite hits localhost:4000.
-const apiBase =
-  (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_API_URL)
-    ? `${process.env.NEXT_PUBLIC_API_URL}/api`
-    : '/api';
-
 export const api = axios.create({
-  baseURL: apiBase,
+  baseURL: '/api',
   withCredentials: true,
   timeout: 60000,
 });
+
+/**
+ * Direct API URL for the rare endpoints that exceed Next's internal proxy
+ * timeout (workout generation can take 30-50s and the rewrite drops the
+ * socket with "hang up"). Used ad-hoc by those callers; everything else
+ * keeps using the rewrite so same-origin + cookies stay simple.
+ *
+ * Falls back to '' (relative /api) when the env var is missing, which is
+ * the dev case — local rewrite handles localhost:4000 just fine for short
+ * requests, and a long-running generation in dev is rare.
+ */
+export const apiDirectBase =
+  (typeof window !== 'undefined' && process.env.NEXT_PUBLIC_API_URL)
+    ? `${process.env.NEXT_PUBLIC_API_URL}/api`
+    : '/api';
 
 function getStored(): { token: string | null; refreshToken: string | null } {
   try {
