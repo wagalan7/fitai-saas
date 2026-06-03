@@ -33,3 +33,19 @@ export class SaveStepDto {
   @IsInt() @Min(0) @Max(20) step!: number;
   @ValidateNested() @Type(() => OnboardingAnswersDto) answers!: OnboardingAnswersDto;
 }
+
+/** One image in the initial evaluation payload. data is raw base64 (no
+ *  `data:` prefix — the agent service builds the data-URL itself). */
+export class EvaluationImageDto {
+  @IsString() data!: string;
+  @IsOptional() @IsString() mimeType?: string;
+}
+
+export class InitialEvaluationDto {
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => EvaluationImageDto)
+  images!: EvaluationImageDto[];
+
+  @IsOptional() @IsString() notes?: string;
+}

@@ -9,5 +9,8 @@ import { MemoryModule } from '../memory/memory.module';
   imports: [AgentsModule, MemoryModule],
   providers: [ChatGateway, ChatService],
   controllers: [ChatController],
+  // OnboardingModule needs ChatService to persist the Dr Shape evaluation
+  // session/messages produced during initial onboarding.
+  exports: [ChatService],
 })
 export class ChatModule {}

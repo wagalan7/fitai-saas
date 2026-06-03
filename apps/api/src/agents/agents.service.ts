@@ -187,6 +187,52 @@ ${recentProgress
     if (!inThink && thinkBuf) yield thinkBuf;
   }
 
+  /**
+   * Non-streaming Dr Shape evaluation — built for the onboarding flow where we
+   * need a single round-trip (no WebSocket) and the caller wants the full
+   * answer before persisting. Mirrors the system prompt + vision-model choice
+   * of `streamChat(EVALUATOR)` so the produced analysis reads identical to the
+   * one users get inside the regular chat.
+   */
+  async evaluateOnce(
+    userId: string,
+    images: Array<{ data: string; mimeType?: string }>,
+    notes?: string,
+  ): Promise<string> {
+    if (!images?.length) {
+      throw new Error('evaluateOnce requires at least one image');
+    }
+    const context = await this.buildContext(userId, AgentType.EVALUATOR);
+    const systemPrompt = SYSTEM_PROMPTS[AgentType.EVALUATOR];
+
+    const imageParts = images.map((img) => ({
+      type: 'image_url' as const,
+      image_url: { url: `data:${img.mimeType || 'image/jpeg'};base64,${img.data}` },
+    }));
+    const userText = notes?.trim()
+      ? `Esta é minha primeira avaliação no FitAI. Observações: ${notes.trim().slice(0, 600)}`
+      : 'Esta é minha primeira avaliação no FitAI. Faça uma análise completa do meu físico atual com base nas fotos.';
+
+    const completion = await this.withRetry(() =>
+      this.groq.chat.completions.create({
+        model: VISION_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt + (context ? `\n\n${context}` : '') },
+          {
+            role: 'user',
+            content: [...imageParts, { type: 'text', text: userText }] as any,
+          },
+        ],
+        max_tokens: 2048,
+      }),
+    );
+
+    const raw = completion.choices[0]?.message?.content || '';
+    // The 70b/scout models occasionally emit <think>…</think> reasoning blocks
+    // — strip them before persisting / showing to the user.
+    return raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+  }
+
   private convertContent(content: string | Array<any>): any {
     if (typeof content === 'string') return content;
 
