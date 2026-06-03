@@ -3,7 +3,12 @@ import Groq from 'groq-sdk';
 import { AgentType } from '@prisma/client';
 import { TRAINER_SYSTEM_PROMPT } from './prompts/trainer.prompt';
 import { NUTRITIONIST_SYSTEM_PROMPT } from './prompts/nutritionist.prompt';
-import { WORKOUT_GENERATION_PROMPT, NUTRITION_GENERATION_PROMPT } from './prompts/generation.prompt';
+import {
+  WORKOUT_GENERATION_PROMPT,
+  WORKOUT_SKELETON_PROMPT,
+  WORKOUT_SESSION_EXPANSION_PROMPT,
+  NUTRITION_GENERATION_PROMPT,
+} from './prompts/generation.prompt';
 import { COACH_SYSTEM_PROMPT } from './prompts/coach.prompt';
 import { ANALYST_SYSTEM_PROMPT } from './prompts/analyst.prompt';
 import { EVALUATOR_SYSTEM_PROMPT } from './prompts/evaluator.prompt';
@@ -359,6 +364,125 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
     const text = completion.choices[0]?.message?.content || '';
     console.log(`[generateWorkoutPlan] response length=${text.length} preview=${text.slice(0, 100)}`);
     return this.extractJson(text);
+  }
+
+  /**
+   * Two-pass workout generation. Pass 1 returns only the week skeleton with
+   * per-group target counts (~500 tokens, structurally impossible to truncate).
+   * Pass 2 fans out one call per session to expand its exercise list. Each
+   * pass-2 call produces ~800-1500 tokens — way under any quota — and they run
+   * in parallel so the wall-clock cost is roughly one model round-trip, not N.
+   *
+   * Replaces single-pass for everything except the manual /workouts/generate
+   * fallback. The single-pass version is kept for emergency rollback.
+   */
+  async generateWorkoutPlanTwoPass(userId: string, preferences?: string) {
+    const t0 = Date.now();
+    console.log(
+      `[generateWorkoutPlanTwoPass] start userId=${userId} model=${GEN_MODEL} hasPrefs=${!!preferences?.trim()}`,
+    );
+    const context = await this.buildContext(userId, AgentType.TRAINER);
+
+    const prefsBlock = preferences?.trim()
+      ? `\n\nPREFERÊNCIAS PARA ESTA GERAÇÃO (prioridade máxima — siga ao pé da letra):\n"""\n${preferences.trim().slice(0, 600)}\n"""\n`
+      : '';
+
+    // --- PASS 1: skeleton ---------------------------------------------------
+    const skeletonCompletion = await this.withRetry(() =>
+      this.groq.chat.completions.create({
+        model: GEN_MODEL,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: WORKOUT_SKELETON_PROMPT },
+          {
+            role: 'user',
+            content: `${context}${prefsBlock}\n\nGere APENAS o esqueleto do plano semanal com targetExercises por grupo. Responda APENAS com JSON.`,
+          },
+        ],
+        max_tokens: 2048,
+      }),
+    );
+    const skeletonText = skeletonCompletion.choices[0]?.message?.content || '';
+    const skeleton = this.extractJson(skeletonText) as {
+      name: string;
+      description: string;
+      sessions: Array<{
+        name: string;
+        dayOfWeek: number;
+        muscleGroups: string[];
+        targetExercises: Record<string, number>;
+        estimatedTime: number;
+        focus?: string;
+      }>;
+    };
+    console.log(
+      `[generateWorkoutPlanTwoPass] skeleton done in ${Date.now() - t0}ms sessions=${skeleton.sessions?.length || 0}`,
+    );
+
+    if (!skeleton.sessions?.length) {
+      throw new Error('Skeleton returned no sessions');
+    }
+
+    // --- PASS 2: expand each session in parallel ---------------------------
+    const expanded = await Promise.all(
+      skeleton.sessions.map(async (session, idx) => {
+        const blueprint = {
+          name: session.name,
+          dayOfWeek: session.dayOfWeek,
+          muscleGroups: session.muscleGroups,
+          targetExercises: session.targetExercises,
+          focus: session.focus,
+        };
+        const totalTargets = Object.values(session.targetExercises || {}).reduce(
+          (s, n) => s + (Number(n) || 0),
+          0,
+        );
+        try {
+          const completion = await this.withRetry(() =>
+            this.groq.chat.completions.create({
+              model: GEN_MODEL,
+              response_format: { type: 'json_object' },
+              messages: [
+                { role: 'system', content: WORKOUT_SESSION_EXPANSION_PROMPT },
+                {
+                  role: 'user',
+                  content: `BLUEPRINT:\n${JSON.stringify(blueprint, null, 2)}\n\nGere EXATAMENTE ${totalTargets} exercícios respeitando os targetExercises por grupo. Responda APENAS com JSON.`,
+                },
+              ],
+              max_tokens: 2048,
+            }),
+          );
+          const text = completion.choices[0]?.message?.content || '';
+          const parsed = this.extractJson(text) as { exercises: any[] };
+          return parsed.exercises || [];
+        } catch (err: any) {
+          console.error(
+            `[generateWorkoutPlanTwoPass] session ${idx} (${session.name}) failed: ${err?.message || err}`,
+          );
+          // Fail soft: empty exercises array still keeps the day visible in UI
+          // and the user can regenerate just that day later.
+          return [];
+        }
+      }),
+    );
+
+    const sessions = skeleton.sessions.map((s, i) => ({
+      name: s.name,
+      dayOfWeek: s.dayOfWeek,
+      muscleGroups: s.muscleGroups,
+      estimatedTime: s.estimatedTime,
+      exercises: expanded[i],
+    }));
+
+    console.log(
+      `[generateWorkoutPlanTwoPass] done in ${Date.now() - t0}ms total exercises=${expanded.reduce((s, e) => s + e.length, 0)}`,
+    );
+
+    return {
+      name: skeleton.name,
+      description: skeleton.description,
+      sessions,
+    };
   }
 
   async generateNutritionPlan(userId: string) {

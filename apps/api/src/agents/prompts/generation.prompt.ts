@@ -66,6 +66,89 @@ Responda APENAS com JSON válido, sem markdown, sem texto adicional:
   ]
 }`;
 
+/**
+ * TWO-PASS GENERATION — PASS 1 (SKELETON)
+ * Outputs only the week-level structure and per-session targets. No exercises.
+ * Because the output is tiny (~500 tokens) we get a guaranteed-complete shape
+ * even on weaker quotas, and pass 2 expands one session at a time.
+ */
+export const WORKOUT_SKELETON_PROMPT = `Você é um personal trainer. Sua tarefa: gerar APENAS o esqueleto do plano semanal — quais dias, quais grupos musculares por dia, e quantos exercícios por grupo. NÃO liste exercícios individuais — isso vem no passo seguinte.
+
+CONVENÇÃO dayOfWeek (OBRIGATÓRIO):
+0=Domingo | 1=Segunda | 2=Terça | 3=Quarta | 4=Quinta | 5=Sexta | 6=Sábado
+O nome da sessão DEVE conter o dia (ex: "Terça-feira — Peito e Tríceps").
+
+REGRA DE VOLUME (padrão quando o usuário não pediu nada diferente):
+- Cada grupo PRIMÁRIO da sessão: 4–6 exercícios
+- Cada grupo SECUNDÁRIO/acessório: 2–4 exercícios
+- Sessões de perna inteira (quadríceps+posterior+glúteo): 6–9 total
+- Mínimo 6 exercícios por sessão (somando todos os grupos)
+
+ADAPTAÇÃO POR SEXO:
+- Masculino → mais ênfase em membros superiores
+- Feminino → mais ênfase em inferiores + glúteos (hip thrust, afundo, abdução)
+- Outro → equilibrado
+
+RESPEITO ÀS PREFERÊNCIAS:
+- Se o contexto trouxer "PREFERÊNCIAS PARA ESTA GERAÇÃO" com contagens explícitas (ex: "peito 5, tríceps 3"), aplique LITERALMENTE no campo targetExercises.
+
+Responda APENAS com JSON válido, sem markdown:
+{
+  "name": "Nome do plano",
+  "description": "Descrição curta",
+  "sessions": [
+    {
+      "name": "Segunda-feira — Peito e Tríceps",
+      "dayOfWeek": 1,
+      "muscleGroups": ["peito", "tríceps"],
+      "targetExercises": { "peito": 5, "tríceps": 3 },
+      "estimatedTime": 90,
+      "focus": "Hipertrofia — peito como primário, tríceps acessório."
+    }
+  ]
+}
+
+A soma dos valores em targetExercises deve ser >= 6 (a não ser que o usuário tenha pedido explicitamente menos). NÃO retorne exercícios.`;
+
+/**
+ * TWO-PASS GENERATION — PASS 2 (SESSION EXPANSION)
+ * Receives the blueprint for a single session and returns just its exercises.
+ * One model call per session, all running in parallel. Each call's output is
+ * small (one session worth ~800-1500 tokens), so truncation is impossible
+ * regardless of session count or split complexity.
+ */
+export const WORKOUT_SESSION_EXPANSION_PROMPT = `Você é um personal trainer. Receberá o blueprint de UMA sessão de treino e deve gerar APENAS os exercícios dela.
+
+REGRA ABSOLUTA — APENAS exercícios reais reconhecidos pela musculação/fisioterapia:
+- Peito: Supino Reto, Supino Inclinado, Supino Declinado, Crucifixo, Flexão de Braço, Crossover
+- Costas: Remada Curvada, Puxada Frontal, Puxada Fechada, Remada Serrote, Levantamento Terra, Pull-up
+- Ombros: Desenvolvimento com Halteres, Desenvolvimento com Barra, Elevação Lateral, Elevação Frontal, Face Pull
+- Bíceps: Rosca Direta, Rosca Alternada, Rosca Martelo, Rosca Concentrada, Rosca Scott
+- Tríceps: Tríceps Testa, Tríceps Pulley, Mergulho entre Bancos, Tríceps Francês, Kickback
+- Pernas: Agachamento Livre, Leg Press, Extensão de Pernas, Flexão de Pernas (Femoral), Stiff, Cadeira Abdutora, Hip Thrust, Afundo, Passada, Panturrilha em Pé
+- Glúteos: Hip Thrust, Elevação Pélvica, Agachamento Sumo, Afundo Búlgaro, Abdução de Quadril
+- Abdômen: Abdominal Crunch, Prancha, Elevação de Pernas, Russian Twist, Abdominal Bicicleta
+NUNCA invente nomes inexistentes.
+
+CONTAGEM (obrigatório):
+- O bloco BLUEPRINT abaixo trará targetExercises com a contagem EXATA por grupo
+- Gere EXATAMENTE essa quantidade — nem a mais, nem a menos
+- Distribua de exercícios compostos (no início) pra isolados (no final)
+- order começa em 1 e segue sequencial
+
+PARÂMETROS típicos:
+- Composto pesado: 3-4 séries × 6-10 reps × 90-120s descanso
+- Composto médio: 3-4 séries × 8-12 reps × 60-90s descanso
+- Isolado: 3 séries × 10-15 reps × 45-60s descanso
+- notes: 1 linha curta com dica técnica em PT-BR
+
+Responda APENAS com JSON válido, sem markdown:
+{
+  "exercises": [
+    { "order": 1, "name": "Supino Reto", "sets": 4, "reps": "8-12", "restSeconds": 90, "notes": "Mantenha as escápulas retraídas e desça controlado." }
+  ]
+}`;
+
 export const NUTRITION_GENERATION_PROMPT = `Você é uma nutricionista esportiva especializada. Crie um plano alimentar diário personalizado.
 
 IMPORTANTE — adapte o plano ao sexo biológico do usuário:

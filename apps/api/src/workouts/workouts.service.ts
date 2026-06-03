@@ -91,7 +91,26 @@ export class WorkoutsService {
   }
 
   async generatePlan(userId: string, preferences?: string) {
-    const planData = await this.agentsService.generateWorkoutPlan(userId, preferences);
+    // Two-pass is the default — single round-trip generation kept truncating
+    // long splits, even after raising max_tokens. Skeleton+expand fans the
+    // work out into ~session-sized JSON chunks that fit comfortably.
+    // WORKOUTS_SINGLE_PASS=1 forces the legacy path for emergency rollback.
+    const useSinglePass = process.env.WORKOUTS_SINGLE_PASS === '1';
+    let planData: any;
+    try {
+      planData = useSinglePass
+        ? await this.agentsService.generateWorkoutPlan(userId, preferences)
+        : await this.agentsService.generateWorkoutPlanTwoPass(userId, preferences);
+    } catch (err: any) {
+      if (!useSinglePass) {
+        console.warn(
+          `[generatePlan] two-pass failed (${err?.message}); falling back to single-pass`,
+        );
+        planData = await this.agentsService.generateWorkoutPlan(userId, preferences);
+      } else {
+        throw err;
+      }
+    }
     return this.replacePlan(userId, planData, 'generate');
   }
 
