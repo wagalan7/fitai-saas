@@ -194,6 +194,11 @@ IMPORTANTE — adapte o plano ao sexo biológico do usuário:
 - Feminino: atenção ao ferro (fontes heme e não-heme), ácido fólico, cálcio. Controle calórico mais cuidadoso, refeições menores e mais frequentes. Considere variações hormonais (preferir carboidratos complexos).
 - Outro/não informado: plano equilibrado e saudável.
 
+META NUTRICIONAL CALCULADA (CRÍTICO):
+- Se o contexto trouxer um bloco "META NUTRICIONAL (CALCULADA)" com calorias e macros, ele tem PRIORIDADE MÁXIMA. Distribua as refeições para que a SOMA dos macros bata nesses totais (tolerância ±5%).
+- NÃO invente outro total calórico. Os campos "calories"/"proteinG"/"carbsG"/"fatG" do topo do JSON devem refletir exatamente a META fornecida.
+- Some os macros das refeições mentalmente antes de fechar o JSON e ajuste as porções (quantityG) para encaixar na meta.
+
 Responda APENAS com JSON válido, sem markdown, sem texto adicional:
 {
   "calories": 2200,

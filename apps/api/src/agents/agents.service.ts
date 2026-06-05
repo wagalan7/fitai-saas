@@ -14,6 +14,7 @@ import { ANALYST_SYSTEM_PROMPT } from './prompts/analyst.prompt';
 import { EVALUATOR_SYSTEM_PROMPT } from './prompts/evaluator.prompt';
 import { MemoryService } from '../memory/memory.service';
 import { PrismaService } from '../common/prisma.service';
+import { computeNutritionTargets } from '../nutrition/nutrition-math';
 
 const SYSTEM_PROMPTS: Record<AgentType, string> = {
   TRAINER: TRAINER_SYSTEM_PROMPT,
@@ -593,7 +594,27 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
 
   async generateNutritionPlan(userId: string) {
     console.log(`[generateNutritionPlan] start userId=${userId} model=${GEN_MODEL}`);
-    const context = await this.buildContext(userId, AgentType.NUTRITIONIST);
+    const [context, profile] = await Promise.all([
+      this.buildContext(userId, AgentType.NUTRITIONIST),
+      this.prisma.userProfile.findUnique({ where: { userId } }),
+    ]);
+
+    // Deterministic calorie/macro target (Mifflin-St Jeor). When the profile
+    // has enough data we anchor the AI to it AND override the headline numbers
+    // afterward, so the stored plan total is always defensible math — not an
+    // AI guess that drifts run-to-run.
+    const targets = profile ? computeNutritionTargets(profile) : null;
+    const targetBlock = targets
+      ? `\n\nMETA NUTRICIONAL (CALCULADA — prioridade máxima, distribua as refeições para bater estes totais ±5%):
+- Calorias: ${targets.calories} kcal/dia
+- Proteína: ${targets.proteinG} g
+- Carboidrato: ${targets.carbsG} g
+- Gordura: ${targets.fatG} g
+(${targets.rationale})\n`
+      : '';
+    console.log(
+      `[generateNutritionPlan] targets=${targets ? `${targets.calories}kcal P${targets.proteinG}/C${targets.carbsG}/G${targets.fatG}` : 'none (insufficient profile)'}`,
+    );
 
     const completion = await this.withRetry(() =>
       this.groq.chat.completions.create({
@@ -602,7 +623,7 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
           { role: 'system', content: NUTRITION_GENERATION_PROMPT },
           {
             role: 'user',
-            content: `${context}\n\nCrie um plano alimentar diário completo e personalizado para este usuário. Responda APENAS com o JSON.`,
+            content: `${context}${targetBlock}\n\nCrie um plano alimentar diário completo e personalizado para este usuário. Responda APENAS com o JSON.`,
           },
         ],
         max_tokens: 4096,
@@ -611,6 +632,17 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
 
     const text = completion.choices[0]?.message?.content || '';
     console.log(`[generateNutritionPlan] response length=${text.length} preview=${text.slice(0, 100)}`);
-    return this.extractJson(text);
+    const planData = this.extractJson(text) as any;
+
+    // Override the headline with the computed target so it never drifts from
+    // the math. Meals stay as the AI distributed them (guidance), but the
+    // plan total the user sees is the calculated one.
+    if (targets && planData) {
+      planData.calories = targets.calories;
+      planData.proteinG = targets.proteinG;
+      planData.carbsG = targets.carbsG;
+      planData.fatG = targets.fatG;
+    }
+    return planData;
   }
 }
