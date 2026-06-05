@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { createHash } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { AgentsService } from '../agents/agents.service';
+import { resolveExerciseVideo } from './exercise-library';
 
 // In-memory dedup: userId+hash → in-flight or recently-completed result.
 // 60s TTL is enough to catch double-clicks, auto-save races, and network retries.
@@ -108,6 +109,10 @@ export class WorkoutsService {
             reps: String(ex.reps),
             restSeconds: Number(ex.restSeconds) || 60,
             notes: ex.notes || null,
+            // Curated demo link, resolved server-side so every client (web,
+            // iOS, Watch) shows the same demonstration. Respect any URL the
+            // model already provided.
+            videoUrl: ex.videoUrl || resolveExerciseVideo(ex.name),
           })),
         },
       },

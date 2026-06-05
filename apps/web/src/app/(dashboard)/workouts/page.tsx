@@ -493,7 +493,7 @@ export default function WorkoutsPage() {
                             <div className="flex items-center gap-2 flex-wrap">
                               <p className="font-semibold text-gray-900">{ex.name}</p>
                               <a
-                                href={`https://www.youtube.com/results?search_query=${encodeURIComponent(ex.name + ' como fazer execução')}`}
+                                href={ex.videoUrl || `https://www.youtube.com/results?search_query=${encodeURIComponent(ex.name + ' como fazer execução')}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-full transition-colors"
