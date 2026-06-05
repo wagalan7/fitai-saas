@@ -89,15 +89,22 @@ ADAPTAÇÃO POR SEXO:
 - Feminino → mais ênfase em inferiores + glúteos (hip thrust, afundo, abdução)
 - Outro → equilibrado
 
-RESPEITO ÀS PREFERÊNCIAS:
+RESPEITO ÀS PREFERÊNCIAS (PRIORIDADE MÁXIMA — sobrepõe TODA outra regra):
 - Se o contexto trouxer "PREFERÊNCIAS PARA ESTA GERAÇÃO" com contagens explícitas (ex: "peito 5, tríceps 3"), aplique LITERALMENTE no campo targetExercises.
-- Se o usuário pedir "perna isolada" / "ombro isolado" / qualquer "X isolado", esse grupo TEM que ficar SOZINHO na sessão — nada de combinar com outro grupo grande.
-  Ex: "perna isolada na segunda" → segunda só pode ter quadríceps/posterior/glúteo/panturrilha. NÃO pode entrar peito, costas, ombro, braço.
-- Quando combinar grupos numa mesma sessão, use SOMENTE pares fisiológicos clássicos:
+- DIA DA SEMANA EXPLÍCITO — se o usuário disser "ombro no sábado", "perna na segunda", "peito na quarta", você DEVE usar EXATAMENTE esse dayOfWeek. Sábado=6, Sexta=5, Quinta=4, Quarta=3, Terça=2, Segunda=1, Domingo=0. Se ele pediu sábado, NÃO coloque na sexta. Releia a preferência antes de fechar o JSON.
+- ISOLAMENTO — se o usuário pedir "perna isolada", "ombro isolado", "peito isolado" ou qualquer "X isolado", esse grupo TEM que ficar SOZINHO na sessão.
+  Ex: "ombro isolado no sábado" → sábado SÓ tem ombro. muscleGroups=["ombro"], targetExercises={"ombro": N}. NADA de peito, costas, braço, perna, abdômen, cardio junto.
+  Ex: "perna isolada na segunda" → segunda só tem quadríceps/posterior/glúteo/panturrilha. NÃO pode entrar peito, costas, ombro, braço.
+- Quando combinar grupos numa mesma sessão (e o usuário NÃO pediu isolamento), use SOMENTE pares fisiológicos clássicos:
   peito+tríceps, costas+bíceps, peito+costas (push-pull), ombro+braço,
   perna+glúteo, perna+abdômen. NUNCA combine perna com costas, perna com peito, etc.
 - "muscleGroups" da sessão DEVE bater 1-pra-1 com as chaves de "targetExercises".
   Se um grupo não tá em muscleGroups, ele NÃO PODE aparecer em targetExercises (e vice-versa).
+
+REGRA DE CARDIO (CRÍTICO):
+- Cardio é uma MODALIDADE separada, não um grupo muscular. Sessões de cardio devem ter muscleGroups=["cardio"] APENAS — NUNCA misture com abdômen, peito, perna etc.
+- Exercícios válidos de cardio: Corrida, Caminhada, Ciclismo, Natação, Esteira, Bike Ergométrica, Elíptico, Pular Corda, HIIT.
+- Abdômen (ABS, Abdominal, Prancha, Crunch) NÃO é cardio. Se for dia de cardio, NÃO inclua abdômen. Se quiser abdômen, crie sessão própria com muscleGroups=["abdômen"].
 
 Responda APENAS com JSON válido, sem markdown:
 {
@@ -147,8 +154,15 @@ RESTRIÇÃO DE GRUPO (CRÍTICA):
 - Use SOMENTE exercícios dos grupos listados em targetExercises do BLUEPRINT
 - Se targetExercises = {"perna": 6}, gere SÓ exercícios de perna. NÃO inclua
   Remada, Supino, Puxada, Rosca, ou QUALQUER exercício de outro grupo
+- Se targetExercises = {"ombro": 5}, gere SÓ exercícios de ombro (Desenvolvimento, Elevação Lateral, Elevação Frontal, Face Pull, Arnold Press, Remada Alta). NÃO inclua peito, costas, braço, perna, abdômen.
+- Se muscleGroups = ["cardio"], gere SÓ modalidades de cardio (Corrida, Caminhada, Ciclismo, Natação, Esteira, Bike, Elíptico, Pular Corda, HIIT). NUNCA inclua Abdominal/ABS/Prancha/Crunch — abdômen NÃO é cardio.
 - Cada exercício gerado precisa pertencer a UM dos grupos do BLUEPRINT.
   Em caso de dúvida, escolha um exercício clássico daquele grupo.
+
+SEM DUPLICATAS (CRÍTICO):
+- Cada exercise.name deve ser ÚNICO dentro da sessão. NUNCA repita o mesmo exercício.
+- Variantes contam como duplicata se o nome base é idêntico. "Supino Reto" e "Supino Reto" = duplicata. Use variações reais: "Supino Reto com Barra" + "Supino Inclinado com Halteres" + "Crucifixo" (3 nomes diferentes).
+- Antes de fechar o JSON, revise a lista e garanta que não há nomes repetidos.
 
 PARÂMETROS típicos:
 - Composto pesado: 3-4 séries × 6-10 reps × 90-120s descanso

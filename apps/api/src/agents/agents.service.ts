@@ -482,12 +482,28 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
       });
     }
 
+    // Safety net: dedupe exercises by normalized name within each session.
+    // The prompt forbids duplicates but the model occasionally repeats names
+    // (e.g. two "Supino Reto" entries). Keep first occurrence, drop the rest,
+    // and re-number `order` so the UI stays sequential.
+    const dedupe = (exs: any[]): any[] => {
+      const seen = new Set<string>();
+      const out: any[] = [];
+      for (const e of exs || []) {
+        const key = String(e?.name || '').trim().toLowerCase();
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push({ ...e, order: out.length + 1 });
+      }
+      return out;
+    };
+
     const sessions = skeleton.sessions.map((s, i) => ({
       name: s.name,
       dayOfWeek: s.dayOfWeek,
       muscleGroups: s.muscleGroups,
       estimatedTime: s.estimatedTime,
-      exercises: expanded[i],
+      exercises: dedupe(expanded[i]),
     }));
 
     console.log(
