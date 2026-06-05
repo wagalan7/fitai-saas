@@ -139,6 +139,74 @@ ${recentProgress
     return parts.join('\n');
   }
 
+  /**
+   * Builds the per-exercise load history block — the single most important
+   * piece of context for making the trainer behave like a real coach instead
+   * of a plan generator. For every exercise the user has actually logged, we
+   * surface the most recent top working set (heaviest weight + its reps/RPE)
+   * so pass 2 can carry the load forward and apply progressive overload.
+   *
+   * Returns '' when the user has no logged history yet (new user) — the prompt
+   * falls back to RIR-based starting-load guidance in that case.
+   */
+  async buildTrainingHistory(userId: string): Promise<string> {
+    const logs = await this.prisma.workoutLog.findMany({
+      where: { userId },
+      orderBy: { completedAt: 'desc' },
+      take: 20,
+      include: { exerciseLogs: { include: { sets: true } } },
+    });
+    if (!logs.length) return '';
+
+    // logs are newest-first, so the first time we see an exercise name is its
+    // most recent performance — keep that one, ignore older repeats.
+    type Top = { name: string; date: Date; weight: number | null; reps: number | null; rpe: number | null };
+    const byExercise = new Map<string, Top>();
+
+    for (const log of logs) {
+      for (const el of log.exerciseLogs) {
+        const key = el.exerciseName.trim().toLowerCase();
+        if (!key || byExercise.has(key)) continue;
+        // Top working set = heaviest weight logged for this exercise that day.
+        let top: { weightKg: number | null; reps: number | null; rpe: number | null } | null = null;
+        for (const s of el.sets) {
+          if (s.weightKg == null && s.reps == null) continue;
+          if (!top || (s.weightKg ?? 0) > (top.weightKg ?? 0)) {
+            top = { weightKg: s.weightKg, reps: s.reps, rpe: s.rpe };
+          }
+        }
+        if (!top) continue;
+        byExercise.set(key, {
+          name: el.exerciseName.trim(),
+          date: log.completedAt,
+          weight: top.weightKg,
+          reps: top.reps,
+          rpe: top.rpe,
+        });
+      }
+    }
+
+    if (!byExercise.size) return '';
+
+    const now = Date.now();
+    const daysAgo = (d: Date) => {
+      const n = Math.round((now - d.getTime()) / 86_400_000);
+      return n <= 0 ? 'hoje' : n === 1 ? 'ontem' : `${n} dias atrás`;
+    };
+
+    const lines = Array.from(byExercise.values())
+      .sort((a, b) => b.date.getTime() - a.date.getTime())
+      .slice(0, 30)
+      .map((e) => {
+        const w = e.weight != null ? `${e.weight}kg` : 'peso corporal';
+        const r = e.reps != null ? ` × ${e.reps} reps` : '';
+        const rpe = e.rpe != null ? `, RPE ${e.rpe}` : '';
+        return `- ${e.name}: ${w}${r}${rpe} — ${daysAgo(e.date)}`;
+      });
+
+    return `=== HISTÓRICO DE CARGAS (último registro real do aluno por exercício) ===\n${lines.join('\n')}`;
+  }
+
   async *streamChat(
     userId: string,
     agentType: AgentType,
@@ -381,7 +449,13 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
     console.log(
       `[generateWorkoutPlanTwoPass] start userId=${userId} model=${GEN_MODEL} hasPrefs=${!!preferences?.trim()}`,
     );
-    const context = await this.buildContext(userId, AgentType.TRAINER);
+    const [context, history] = await Promise.all([
+      this.buildContext(userId, AgentType.TRAINER),
+      this.buildTrainingHistory(userId),
+    ]);
+    console.log(
+      `[generateWorkoutPlanTwoPass] history loaded: ${history ? 'yes' : 'none (new user)'}`,
+    );
 
     const prefsBlock = preferences?.trim()
       ? `\n\nPREFERÊNCIAS PARA ESTA GERAÇÃO (prioridade máxima — siga ao pé da letra):\n"""\n${preferences.trim().slice(0, 600)}\n"""\n`
@@ -453,7 +527,7 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
               { role: 'system', content: WORKOUT_SESSION_EXPANSION_PROMPT },
               {
                 role: 'user',
-                content: `BLUEPRINT:\n${JSON.stringify(blueprint, null, 2)}\n\nGere EXATAMENTE ${totalTargets} exercícios respeitando os targetExercises por grupo. Responda APENAS com JSON.`,
+                content: `BLUEPRINT:\n${JSON.stringify(blueprint, null, 2)}\n${history ? `\n${history}\n` : ''}\nGere EXATAMENTE ${totalTargets} exercícios respeitando os targetExercises por grupo. Para exercícios que aparecem no HISTÓRICO DE CARGAS, aplique a regra de progressão e indique a carga sugerida em "notes". Responda APENAS com JSON.`,
               },
             ],
             max_tokens: 2048,

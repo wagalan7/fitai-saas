@@ -170,6 +170,16 @@ PARÂMETROS típicos:
 - Isolado: 3 séries × 10-15 reps × 45-60s descanso
 - notes: 1 linha curta com dica técnica em PT-BR
 
+PROGRESSÃO DE CARGA (CRÍTICO — é o que torna o treino de verdade):
+- O bloco "HISTÓRICO DE CARGAS" pode trazer a última carga real do aluno por exercício, com reps e RPE (esforço percebido 1-10).
+- Se o exercício que você escolher ESTÁ no histórico, ajuste a carga sugerida pela regra abaixo e escreva em "notes" (ex: "Suba para 82,5kg — você fechou 80kg × 10 com RPE 7"):
+  • RPE ≤ 6 (folgado): aumente ~5% (compostos +2,5 a 5kg; isolados +1 a 2,5kg)
+  • RPE 7-8 (ideal): micro-progressão, +2,5kg em compostos / +1kg em isolados
+  • RPE 9 (quase no limite): mantenha a carga e tente +1 repetição
+  • RPE 10 ou não bateu as reps alvo: faça deload, reduza ~10%
+- Se o exercício NÃO está no histórico (ou aluno novo sem dados): em "notes" oriente uma carga inicial que permita completar as reps com 2 repetições de reserva (RIR 2), sem sugerir kg específico.
+- NUNCA invente que o aluno levantou X se não estiver no histórico. Sem dado, oriente pela percepção de esforço.
+
 Responda APENAS com JSON válido, sem markdown:
 {
   "exercises": [

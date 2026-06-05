@@ -22,6 +22,14 @@ export class WorkoutsService {
     ['desenvolvimento', 'perna'], ['leg', 'bícep'], ['leg', 'trícep'],
   ];
 
+  // Abdominal/core moves that the model sometimes drops into a pure-cardio
+  // session. Cardio days stay cardio — if the plan wants core it gets its own
+  // session — so we strip these when the session is cardio-only.
+  private static ABDOMINAL_WORDS = [
+    'abdominal', 'abdômen', 'abdomen', 'prancha', 'crunch',
+    'russian twist', 'elevação de pernas', 'oblíquo',
+  ];
+
   private sanitizeExerciseName(name: string): string {
     const lower = name.toLowerCase();
     for (const [a, b] of WorkoutsService.INVALID_COMBOS) {
@@ -33,20 +41,68 @@ export class WorkoutsService {
     return name;
   }
 
-  private buildPlanSessions(sessions: any[]) {
-    return (sessions || []).map((session: any) => {
-      const validExercises = (session.exercises || [])
-        .map((ex: any) => ({ ...ex, name: this.sanitizeExerciseName(ex.name) }))
-        .filter((ex: any) => ex.name !== null);
+  /**
+   * Single chokepoint that cleans an LLM-produced plan before it hits the DB,
+   * regardless of source (two-pass, single-pass, or chat-extracted). The
+   * two-pass generator already dedupes, but chat extraction and single-pass
+   * did not — centralizing here means every plan the user ever sees is clean.
+   *
+   * Repairs applied per session:
+   *  - drop hallucinated combos (e.g. "Supino de Perna") via sanitize
+   *  - drop duplicate exercise names (keeps first), renumber `order`
+   *  - on cardio-only sessions, strip abdominal/core moves (issue #4)
+   * Issues are logged (structured) so we can later wire them into metrics.
+   */
+  private cleanSession(session: any): {
+    cleaned: any;
+    issues: string[];
+  } {
+    const issues: string[] = [];
+    const groups: string[] = (session.muscleGroups || []).map((g: string) =>
+      String(g).toLowerCase(),
+    );
+    const isCardioOnly =
+      groups.length > 0 &&
+      groups.every((g) => g.includes('cardio') || g.includes('aerób'));
 
-      return {
+    const seen = new Set<string>();
+    const exercises: any[] = [];
+
+    for (const raw of session.exercises || []) {
+      const name = this.sanitizeExerciseName(raw.name);
+      if (name === null) {
+        issues.push(`combo inválido removido: "${raw.name}"`);
+        continue;
+      }
+      const lower = name.trim().toLowerCase();
+      if (!lower) continue;
+
+      if (seen.has(lower)) {
+        issues.push(`duplicata removida: "${name}"`);
+        continue;
+      }
+
+      if (
+        isCardioOnly &&
+        WorkoutsService.ABDOMINAL_WORDS.some((w) => lower.includes(w))
+      ) {
+        issues.push(`abdômen removido de sessão de cardio: "${name}"`);
+        continue;
+      }
+
+      seen.add(lower);
+      exercises.push({ ...raw, name });
+    }
+
+    return {
+      cleaned: {
         dayOfWeek: Number(session.dayOfWeek) ?? 1,
         name: session.name,
         muscleGroups: session.muscleGroups || [],
         estimatedTime: Number(session.estimatedTime) || 60,
         exercises: {
-          create: validExercises.map((ex: any, i: number) => ({
-            order: Number(ex.order) || i + 1,
+          create: exercises.map((ex: any, i: number) => ({
+            order: i + 1, // re-number after removals so the UI stays sequential
             name: ex.name,
             sets: Number(ex.sets) || 3,
             reps: String(ex.reps),
@@ -54,8 +110,24 @@ export class WorkoutsService {
             notes: ex.notes || null,
           })),
         },
-      };
+      },
+      issues,
+    };
+  }
+
+  private buildPlanSessions(sessions: any[]) {
+    const allIssues: string[] = [];
+    const built = (sessions || []).map((session: any) => {
+      const { cleaned, issues } = this.cleanSession(session);
+      if (issues.length) {
+        allIssues.push(`[${session.name}] ${issues.join('; ')}`);
+      }
+      return cleaned;
     });
+    if (allIssues.length) {
+      console.warn(`[buildPlanSessions] repaired plan: ${allIssues.join(' | ')}`);
+    }
+    return built;
   }
 
   private activePlanInclude = {
