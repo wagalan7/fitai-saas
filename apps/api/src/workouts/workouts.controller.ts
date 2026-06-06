@@ -17,7 +17,16 @@ export class WorkoutsController {
     // which is fine. Newer web sends { preferences }.
     @Body() body: GeneratePlanDto = {},
   ) {
-    return this.workoutsService.generatePlan(req.user.id, body.preferences);
+    return this.workoutsService.generatePlan(req.user.id, body.preferences, body.cycleWeeks);
+  }
+
+  // Advances the active plan to the next week of its mesocycle, regenerating
+  // with that week's periodization phase (deload at the end of the block).
+  // Same long-running cost as generate, so it shares the throttle budget.
+  @Throttle({ default: { limit: 5, ttl: 3600000 } })
+  @Post('advance-week')
+  advanceWeek(@Req() req: { user: { id: string } }) {
+    return this.workoutsService.advanceWeek(req.user.id);
   }
 
   @Throttle({ default: { limit: 5, ttl: 3600000 } })

@@ -176,6 +176,12 @@ model WorkoutPlan {
   name        String
   description String?
   weekNumber  Int      @default(1)
+  // Mesocycle position: this plan is week `currentWeek` of a `cycleWeeks`-long
+  // block. The last week of each cycle is a programmed deload. advanceWeek()
+  // walks currentWeek forward (rolling into a fresh cycle at the end), letting
+  // generation modulate volume/intensity per the periodization phase.
+  cycleWeeks  Int      @default(4)
+  currentWeek Int      @default(1)
   isActive    Boolean  @default(true)
   generatedBy String   @default("ai")
   rawPrompt   String?

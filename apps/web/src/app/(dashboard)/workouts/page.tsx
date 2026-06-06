@@ -62,6 +62,7 @@ export default function WorkoutsPage() {
   const { data: todayLogs } = useSWR<Record<string, string>>('/workouts/today-logs', swrConfig);
 
   const [generating, setGenerating] = useState(false);
+  const [advancing, setAdvancing] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   // Free-form prefs threaded into the backend prompt at generation time.
   // The trainer prompt has a "PRIORIDADE MÁXIMA" rule for this block.
@@ -214,6 +215,32 @@ export default function WorkoutsPage() {
     }
   }
 
+  // Advances the active plan to the next week of its mesocycle (deload at the
+  // end of the block). Same long-running cost as generate, so it bypasses the
+  // Next.js proxy via the direct API host just like generatePlan does.
+  async function advanceWeek() {
+    setAdvancing(true);
+    setGenerateError(null);
+    try {
+      const token = getStoredToken();
+      const { data } = await axios.post(`${apiDirectBase}/workouts/advance-week`, {}, {
+        timeout: 180_000,
+        withCredentials: true,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      mutatePlan(data, { revalidate: false });
+      savePlanToCache(data);
+      const phase = data?.periodization?.phase;
+      toast.success(phase ? `Semana avançada — fase de ${phase}!` : 'Semana avançada!');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Erro ao avançar a semana. Tente novamente.';
+      setGenerateError(msg);
+      toast.error(msg);
+    } finally {
+      setAdvancing(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-4 animate-pulse">
@@ -329,11 +356,42 @@ export default function WorkoutsPage() {
       {plan && !generating && (
         <>
           <div className="card p-5">
-            <h2 className="text-lg font-bold text-gray-900 mb-1">{plan.name}</h2>
-            {plan.description && <p className="text-gray-500 text-sm">{plan.description}</p>}
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-gray-900 mb-1">{plan.name}</h2>
+                {plan.description && <p className="text-gray-500 text-sm">{plan.description}</p>}
+              </div>
+              {plan.periodization && (
+                <span
+                  className={`flex-shrink-0 inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full ${
+                    plan.periodization.isDeload
+                      ? 'bg-amber-50 text-amber-700 border border-amber-200'
+                      : 'bg-primary-50 text-primary-700 border border-primary-200'
+                  }`}
+                  title={`RPE alvo ${plan.periodization.rpeTarget}`}
+                >
+                  Semana {plan.periodization.currentWeek}/{plan.periodization.cycleWeeks} · {plan.periodization.phase}
+                </span>
+              )}
+            </div>
             <p className="text-xs text-gray-400 mt-2">
               Criado em {new Date(plan.createdAt).toLocaleDateString('pt-BR')} · {plan.sessions?.length} sessões
             </p>
+            {plan.periodization && (
+              <button
+                onClick={advanceWeek}
+                disabled={advancing || generating}
+                className="mt-3 w-full sm:w-auto inline-flex items-center justify-center gap-2 bg-gray-900 hover:bg-gray-800 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+                title="Gera a próxima semana do ciclo, ajustando volume e intensidade (deload no fim do bloco)"
+              >
+                <RefreshCw size={14} className={advancing ? 'animate-spin' : ''} />
+                {advancing
+                  ? 'Avançando...'
+                  : plan.periodization.currentWeek >= plan.periodization.cycleWeeks
+                    ? 'Iniciar novo ciclo'
+                    : 'Avançar para próxima semana'}
+              </button>
+            )}
           </div>
 
           <div className="space-y-3">

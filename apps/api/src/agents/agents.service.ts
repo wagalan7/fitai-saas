@@ -445,10 +445,14 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
    * Replaces single-pass for everything except the manual /workouts/generate
    * fallback. The single-pass version is kept for emergency rollback.
    */
-  async generateWorkoutPlanTwoPass(userId: string, preferences?: string) {
+  async generateWorkoutPlanTwoPass(
+    userId: string,
+    preferences?: string,
+    periodizationDirective?: string,
+  ) {
     const t0 = Date.now();
     console.log(
-      `[generateWorkoutPlanTwoPass] start userId=${userId} model=${GEN_MODEL} hasPrefs=${!!preferences?.trim()}`,
+      `[generateWorkoutPlanTwoPass] start userId=${userId} model=${GEN_MODEL} hasPrefs=${!!preferences?.trim()} hasPeriod=${!!periodizationDirective?.trim()}`,
     );
     const [context, history] = await Promise.all([
       this.buildContext(userId, AgentType.TRAINER),
@@ -462,6 +466,10 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
       ? `\n\nPREFERÊNCIAS PARA ESTA GERAÇÃO (prioridade máxima — siga ao pé da letra):\n"""\n${preferences.trim().slice(0, 600)}\n"""\n`
       : '';
 
+    const periodBlock = periodizationDirective?.trim()
+      ? `\n\n${periodizationDirective.trim()}\n`
+      : '';
+
     // --- PASS 1: skeleton ---------------------------------------------------
     const skeletonCompletion = await this.withRetry(() =>
       this.groq.chat.completions.create({
@@ -471,7 +479,7 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
           { role: 'system', content: WORKOUT_SKELETON_PROMPT },
           {
             role: 'user',
-            content: `${context}${prefsBlock}\n\nGere APENAS o esqueleto do plano semanal com targetExercises por grupo. Responda APENAS com JSON.`,
+            content: `${context}${prefsBlock}${periodBlock}\n\nGere APENAS o esqueleto do plano semanal com targetExercises por grupo. Se houver diretiva de PERIODIZAÇÃO acima (ex: deload), ajuste o volume (targetExercises) de acordo. Responda APENAS com JSON.`,
           },
         ],
         max_tokens: 2048,
@@ -528,7 +536,7 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
               { role: 'system', content: WORKOUT_SESSION_EXPANSION_PROMPT },
               {
                 role: 'user',
-                content: `BLUEPRINT:\n${JSON.stringify(blueprint, null, 2)}\n${history ? `\n${history}\n` : ''}\nGere EXATAMENTE ${totalTargets} exercícios respeitando os targetExercises por grupo. Para exercícios que aparecem no HISTÓRICO DE CARGAS, aplique a regra de progressão e indique a carga sugerida em "notes". Responda APENAS com JSON.`,
+                content: `BLUEPRINT:\n${JSON.stringify(blueprint, null, 2)}\n${history ? `\n${history}\n` : ''}${periodBlock}\nGere EXATAMENTE ${totalTargets} exercícios respeitando os targetExercises por grupo. Para exercícios que aparecem no HISTÓRICO DE CARGAS, aplique a regra de progressão e indique a carga sugerida em "notes". Se houver diretiva de PERIODIZAÇÃO acima, ajuste séries/RPE/carga conforme a fase (no deload, reduza séries e use cargas leves). Responda APENAS com JSON.`,
               },
             ],
             max_tokens: 2048,

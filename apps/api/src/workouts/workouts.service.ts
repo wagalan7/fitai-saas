@@ -3,6 +3,7 @@ import { createHash } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { AgentsService } from '../agents/agents.service';
 import { resolveExerciseVideo } from './exercise-library';
+import { getPeriodization, clampCycleWeeks } from './periodization';
 
 // In-memory dedup: userId+hash → in-flight or recently-completed result.
 // 60s TTL is enough to catch double-clicks, auto-save races, and network retries.
@@ -142,8 +143,15 @@ export class WorkoutsService {
     },
   };
 
-  private async replacePlan(userId: string, planData: any, source: string) {
-    console.log(`[replacePlan] userId=${userId} source=${source} sessions=${planData?.sessions?.length}`);
+  private async replacePlan(
+    userId: string,
+    planData: any,
+    source: string,
+    meta?: { cycleWeeks?: number; currentWeek?: number; rawPrompt?: string | null },
+  ) {
+    console.log(
+      `[replacePlan] userId=${userId} source=${source} sessions=${planData?.sessions?.length} week=${meta?.currentWeek ?? 1}/${meta?.cycleWeeks ?? 4}`,
+    );
 
     // Step 1: deactivate all existing active plans
     const deactivated = await this.prisma.workoutPlan.updateMany({
@@ -159,36 +167,110 @@ export class WorkoutsService {
         isActive: true,
         name: planData.name || (source === 'chat' ? 'Plano do Chat' : 'Plano Personalizado'),
         description: planData.description,
+        cycleWeeks: clampCycleWeeks(meta?.cycleWeeks ?? 4),
+        currentWeek: Math.max(1, meta?.currentWeek ?? 1),
+        rawPrompt: meta?.rawPrompt ?? null,
         sessions: { create: this.buildPlanSessions(planData.sessions) },
       },
       include: this.activePlanInclude,
     });
     console.log(`[replacePlan] created plan id=${newPlan.id} sessions=${newPlan.sessions?.length}`);
-    return newPlan;
+    return this.withPeriodization(newPlan);
   }
 
-  async generatePlan(userId: string, preferences?: string) {
-    // Two-pass is the default — single round-trip generation kept truncating
-    // long splits, even after raising max_tokens. Skeleton+expand fans the
-    // work out into ~session-sized JSON chunks that fit comfortably.
-    // WORKOUTS_SINGLE_PASS=1 forces the legacy path for emergency rollback.
+  /** Attaches the computed periodization phase so the UI can show it without
+   *  duplicating the engine logic on the client. */
+  private withPeriodization<T extends { currentWeek?: number; cycleWeeks?: number } | null>(
+    plan: T,
+  ): T {
+    if (!plan) return plan;
+    return {
+      ...plan,
+      periodization: getPeriodization(
+        (plan as any).currentWeek ?? 1,
+        (plan as any).cycleWeeks ?? 4,
+      ),
+    } as T;
+  }
+
+  /**
+   * Shared generation with the two-pass-then-single-pass fallback. `directive`
+   * is the periodization phase text injected into the prompts.
+   */
+  private async generatePlanData(
+    userId: string,
+    preferences?: string,
+    directive?: string,
+  ) {
     const useSinglePass = process.env.WORKOUTS_SINGLE_PASS === '1';
-    let planData: any;
     try {
-      planData = useSinglePass
-        ? await this.agentsService.generateWorkoutPlan(userId, preferences)
-        : await this.agentsService.generateWorkoutPlanTwoPass(userId, preferences);
-    } catch (err: any) {
-      if (!useSinglePass) {
-        console.warn(
-          `[generatePlan] two-pass failed (${err?.message}); falling back to single-pass`,
-        );
-        planData = await this.agentsService.generateWorkoutPlan(userId, preferences);
-      } else {
-        throw err;
+      if (useSinglePass) {
+        // Single-pass takes no directive arg — fold it into preferences so the
+        // emergency-fallback path still respects the periodization phase.
+        const prefs = [preferences, directive].filter(Boolean).join('\n\n');
+        return await this.agentsService.generateWorkoutPlan(userId, prefs || undefined);
       }
+      return await this.agentsService.generateWorkoutPlanTwoPass(
+        userId,
+        preferences,
+        directive,
+      );
+    } catch (err: any) {
+      console.warn(
+        `[generatePlanData] two-pass failed (${err?.message}); falling back to single-pass`,
+      );
+      const prefs = [preferences, directive].filter(Boolean).join('\n\n');
+      return await this.agentsService.generateWorkoutPlan(userId, prefs || undefined);
     }
-    return this.replacePlan(userId, planData, 'generate');
+  }
+
+  async generatePlan(userId: string, preferences?: string, cycleWeeks?: number) {
+    // A fresh generation starts a NEW mesocycle at week 1 (Acumulação). The
+    // last week of the cycle is a programmed deload; advanceWeek() walks the
+    // weeks forward. Two-pass is the default; generatePlanData handles the
+    // single-pass fallback. WORKOUTS_SINGLE_PASS=1 forces the legacy path.
+    const cycle = clampCycleWeeks(cycleWeeks ?? 4);
+    const period = getPeriodization(1, cycle);
+    const planData = await this.generatePlanData(userId, preferences, period.directive);
+    return this.replacePlan(userId, planData, 'generate', {
+      cycleWeeks: cycle,
+      currentWeek: 1,
+      rawPrompt: preferences ?? null,
+    });
+  }
+
+  /**
+   * Advances the active plan to the next week of its mesocycle, regenerating
+   * with that week's periodization phase. Rolls into a fresh cycle (week 1)
+   * after the deload. Reuses the preferences the cycle was created with so the
+   * split stays consistent across the block; the load progression comes from
+   * the user's logged sets (see AgentsService.buildTrainingHistory).
+   */
+  async advanceWeek(userId: string) {
+    const active = await this.prisma.workoutPlan.findFirst({
+      where: { userId, isActive: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!active) {
+      throw new NotFoundException('Nenhum plano ativo para avançar. Gere um treino primeiro.');
+    }
+
+    const cycle = clampCycleWeeks(active.cycleWeeks ?? 4);
+    let next = (active.currentWeek ?? 1) + 1;
+    if (next > cycle) next = 1; // completed the block → start a new mesocycle
+
+    const period = getPeriodization(next, cycle);
+    const preferences = active.rawPrompt ?? undefined;
+    console.log(
+      `[advanceWeek] userId=${userId} ${active.currentWeek}/${cycle} -> ${next}/${cycle} phase=${period.phase}`,
+    );
+
+    const planData = await this.generatePlanData(userId, preferences, period.directive);
+    return this.replacePlan(userId, planData, 'advance-week', {
+      cycleWeeks: cycle,
+      currentWeek: next,
+      rawPrompt: active.rawPrompt,
+    });
   }
 
   async savePlanFromText(userId: string, text: string) {
@@ -243,7 +325,7 @@ export class WorkoutsService {
       include: this.activePlanInclude,
     });
     console.log(`[getActivePlan] userId=${userId} found=${plans.length} plan="${plans[0]?.name}"`);
-    return plans[0] ?? null;
+    return this.withPeriodization(plans[0] ?? null);
   }
 
   async logWorkout(

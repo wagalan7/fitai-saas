@@ -23,6 +23,9 @@ export class SavePlanFromChatDto {
  */
 export class GeneratePlanDto {
   @IsOptional() @IsString() @MaxLength(600) preferences?: string;
+  // Mesocycle length in weeks (1-8). Defaults to 4 when omitted. The last
+  // week of the cycle is a programmed deload.
+  @IsOptional() @IsInt() @Min(1) @Max(8) cycleWeeks?: number;
 }
 
 export class ExerciseSetDto {
