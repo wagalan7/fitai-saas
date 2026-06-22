@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { Plus, TrendingUp } from 'lucide-react';
 import ProgressChart from '@/components/dashboard/ProgressChart';
+import WeeklyCheckinCard from '@/components/dashboard/WeeklyCheckinCard';
 
 export default function ProgressPage() {
   const [logs, setLogs] = useState<any[]>([]);
@@ -86,6 +87,9 @@ export default function ProgressPage() {
           </div>
         </div>
       )}
+
+      {/* Weekly check-in (ANALYST) */}
+      <WeeklyCheckinCard />
 
       {/* Chart */}
       {logs.length > 1 && (

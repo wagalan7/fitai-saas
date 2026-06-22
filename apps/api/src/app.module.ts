@@ -16,6 +16,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { ProfileModule } from './profile/profile.module';
 import { PushModule } from './push/push.module';
 import { RemindersModule } from './reminders/reminders.module';
+import { CheckinModule } from './checkin/checkin.module';
 import { DatabaseModule } from './common/database.module';
 
 @Module({
@@ -38,6 +39,7 @@ import { DatabaseModule } from './common/database.module';
     ProfileModule,
     PushModule,
     RemindersModule,
+    CheckinModule,
   ],
 })
 export class AppModule {}

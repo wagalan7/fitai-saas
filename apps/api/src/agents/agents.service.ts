@@ -354,6 +354,38 @@ ${recentProgress
     return raw.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
   }
 
+  /**
+   * One-shot weekly check-in — the ANALYST reviews a pre-computed adherence
+   * block (training + nutrition + weight for the last 7 days) and returns a
+   * short coaching summary. Non-streaming on purpose: it's produced by the
+   * cron with no client attached, then persisted as a memory and pushed.
+   *
+   * The stats are computed deterministically by CheckinService and passed in
+   * via `statsBlock` so the model never invents numbers — it only interprets.
+   */
+  async generateWeeklyCheckin(userId: string, statsBlock: string): Promise<string> {
+    const context = await this.buildContext(userId, AgentType.ANALYST);
+    const completion = await this.withRetry(() =>
+      this.groq.chat.completions.create({
+        model: CHAT_MODEL,
+        messages: [
+          { role: 'system', content: SYSTEM_PROMPTS[AgentType.ANALYST] },
+          {
+            role: 'user',
+            content: `${context}\n\n${statsBlock}\n\nGere o CHECK-IN SEMANAL do aluno em PT-BR (máximo ~150 palavras, sem markdown pesado). Estrutura:
+1) Abra reconhecendo o que foi bem na semana.
+2) Aponte o PRINCIPAL ponto de atenção (aderência baixa, proteína abaixo da meta, peso estagnado, etc).
+3) Dê 1 a 2 ações concretas e específicas para a próxima semana.
+Use SOMENTE os números fornecidos no bloco "DADOS DA SEMANA" — não invente dados. Tom de coach: direto, motivador, sem ser genérico.`,
+          },
+        ],
+        max_tokens: 600,
+      }),
+    );
+    const raw = completion.choices[0]?.message?.content || '';
+    return this.stripThinkTags(raw);
+  }
+
   private convertContent(content: string | Array<any>): any {
     if (typeof content === 'string') return content;
 
