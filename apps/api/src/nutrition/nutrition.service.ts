@@ -151,6 +151,113 @@ export class NutritionService {
     return this.prisma.mealLog.create({ data: { userId, ...data } });
   }
 
+  /**
+   * Today's macro adherence vs the active plan — powers the traffic-light card.
+   * "Today" is resolved in the user's timezone (the server runs in UTC, so a
+   * naive server-midnight window would clip late-night logs for BR users).
+   *
+   * Status per macro: 'low' (amber — still short), 'on' (green — within band),
+   * 'over' (red — past the ceiling). Protein has no ceiling (more is fine), so
+   * it only goes low → on.
+   */
+  async getTodayAdherence(userId: string) {
+    const [plan, profile] = await Promise.all([
+      this.prisma.nutritionPlan.findFirst({
+        where: { userId, isActive: true },
+        select: { calories: true, proteinG: true, carbsG: true, fatG: true },
+      }),
+      this.prisma.userProfile.findUnique({
+        where: { userId },
+        select: { timezone: true },
+      }),
+    ]);
+
+    if (!plan) {
+      return { hasPlan: false };
+    }
+
+    const tz = profile?.timezone || 'America/Sao_Paulo';
+    const now = new Date();
+    const since = new Date(now.getTime() - 2 * 86_400_000);
+    const logs = await this.prisma.mealLog.findMany({
+      where: { userId, loggedAt: { gte: since } },
+      select: { calories: true, proteinG: true, carbsG: true, fatG: true, loggedAt: true },
+    });
+
+    const todayKey = this.localDayKey(now, tz);
+    const today = logs.filter((l) => this.localDayKey(l.loggedAt, tz) === todayKey);
+
+    const consumed = today.reduce(
+      (acc, l) => ({
+        calories: acc.calories + (l.calories || 0),
+        proteinG: acc.proteinG + (l.proteinG || 0),
+        carbsG: acc.carbsG + (l.carbsG || 0),
+        fatG: acc.fatG + (l.fatG || 0),
+      }),
+      { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 },
+    );
+
+    // Ceiling macros (calories/carbs/fat): over the top band = red.
+    const ceilStatus = (got: number, target: number) => {
+      if (!target) return 'on';
+      const r = got / target;
+      if (r > 1.1) return 'over';
+      if (r >= 0.85) return 'on';
+      return 'low';
+    };
+    // Floor macro (protein): hitting the target is the goal, more is fine.
+    const floorStatus = (got: number, target: number) => {
+      if (!target) return 'on';
+      return got / target >= 0.85 ? 'on' : 'low';
+    };
+
+    const pct = (got: number, target: number) =>
+      target ? Math.round((got / target) * 100) : 0;
+
+    return {
+      hasPlan: true,
+      mealsLogged: today.length,
+      target: {
+        calories: plan.calories,
+        proteinG: plan.proteinG,
+        carbsG: plan.carbsG,
+        fatG: plan.fatG,
+      },
+      consumed: {
+        calories: Math.round(consumed.calories),
+        proteinG: Math.round(consumed.proteinG),
+        carbsG: Math.round(consumed.carbsG),
+        fatG: Math.round(consumed.fatG),
+      },
+      pct: {
+        calories: pct(consumed.calories, plan.calories),
+        proteinG: pct(consumed.proteinG, plan.proteinG),
+        carbsG: pct(consumed.carbsG, plan.carbsG),
+        fatG: pct(consumed.fatG, plan.fatG),
+      },
+      status: {
+        calories: ceilStatus(consumed.calories, plan.calories),
+        proteinG: floorStatus(consumed.proteinG, plan.proteinG),
+        carbsG: ceilStatus(consumed.carbsG, plan.carbsG),
+        fatG: ceilStatus(consumed.fatG, plan.fatG),
+      },
+    };
+  }
+
+  /** YYYY-MM-DD for a moment in the given IANA timezone. */
+  private localDayKey(d: Date, timeZone: string): string {
+    try {
+      return new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+      }).format(d);
+    } catch {
+      return d.toISOString().slice(0, 10);
+    }
+  }
+
   async getDailyLog(userId: string, date: Date) {
     const start = new Date(date);
     start.setHours(0, 0, 0, 0);

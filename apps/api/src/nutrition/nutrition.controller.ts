@@ -34,6 +34,11 @@ export class NutritionController {
     return this.nutritionService.logMeal(req.user.id, body);
   }
 
+  @Get('today-adherence')
+  getTodayAdherence(@Req() req: { user: { id: string } }) {
+    return this.nutritionService.getTodayAdherence(req.user.id);
+  }
+
   @Get('log')
   getDailyLog(
     @Req() req: { user: { id: string } },

@@ -1,12 +1,13 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import useSWR from 'swr';
+import useSWR, { mutate as globalMutate } from 'swr';
 import { swrConfig } from '@/lib/swr';
 import { api } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import { onPlanUpdated } from '@/lib/events';
 import { Salad, RefreshCw, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
+import DailyAdherenceCard from '@/components/dashboard/DailyAdherenceCard';
 
 export default function NutritionPage() {
   // SWR-backed plan: instant render from cache on revisit, background revalidate.
@@ -41,6 +42,7 @@ export default function NutritionPage() {
         fatG: meal.fatG,
       });
       setLoggedMeals((prev) => new Set([...prev, meal.id]));
+      globalMutate('/nutrition/today-adherence');
       toast.success('Refeição registrada!');
     } catch (err: any) {
       toast.error(err?.response?.data?.message || 'Erro ao registrar refeição. Tente novamente.');
@@ -128,6 +130,9 @@ export default function NutritionPage() {
 
       {plan && !generating && (
         <>
+          {/* Today's adherence (traffic light) */}
+          <DailyAdherenceCard />
+
           {/* Macro summary */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <MacroCard label="Calorias" value={`${plan.calories}`} unit="kcal" color="bg-orange-50 text-orange-600" />
