@@ -208,6 +208,53 @@ ${recentProgress
     return `=== HISTÓRICO DE CARGAS (último registro real do aluno por exercício) ===\n${lines.join('\n')}`;
   }
 
+  /**
+   * Builds the hard-constraints block — injuries and available equipment — used
+   * by workout generation. Unlike the general profile context (which the model
+   * treats as soft background), this block is phrased as non-negotiable safety
+   * rules and is injected into BOTH passes, including pass 2 (session expansion)
+   * which is the step that actually picks exercises and otherwise never sees the
+   * user's limitations.
+   *
+   * Returns '' when there's nothing to constrain (no injuries AND no equipment
+   * specified) so a full-gym, injury-free user pays no prompt-token cost.
+   */
+  private buildSafetyBlock(
+    profile: { injuries?: string[]; availableEquipment?: string[] } | null,
+  ): string {
+    if (!profile) return '';
+    const clean = (arr?: string[]) =>
+      (arr || [])
+        .map((s) => (s || '').trim())
+        .filter(
+          (s) =>
+            s &&
+            !['nenhuma', 'nenhum', 'não informado', 'nao informado', 'n/a'].includes(
+              s.toLowerCase(),
+            ),
+        );
+    const injuries = clean(profile.injuries);
+    const equipment = clean(profile.availableEquipment);
+    if (!injuries.length && !equipment.length) return '';
+
+    const lines: string[] = [
+      '=== RESTRIÇÕES OBRIGATÓRIAS (SEGURANÇA — prioridade sobre TODA outra regra) ===',
+    ];
+    if (injuries.length) {
+      lines.push(`LESÕES/LIMITAÇÕES: ${injuries.join(', ')}`);
+      lines.push(
+        '→ Contraindicação ABSOLUTA: não prescreva exercícios que sobrecarreguem essas regiões. Substitua por variações seguras do mesmo grupo e explique a adaptação em "notes".',
+      );
+    }
+    if (equipment.length) {
+      lines.push(`EQUIPAMENTO DISPONÍVEL: ${equipment.join(', ')}`);
+      lines.push(
+        '→ Use SOMENTE exercícios executáveis com esse equipamento. Não prescreva máquina/polia/barra que o aluno não possui.',
+      );
+    }
+    return `\n\n${lines.join('\n')}\n`;
+  }
+
   async *streamChat(
     userId: string,
     agentType: AgentType,
@@ -403,7 +450,11 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
     console.log(
       `[generateWorkoutPlan] start userId=${userId} model=${GEN_MODEL} hasPrefs=${!!preferences?.trim()}`,
     );
-    const context = await this.buildContext(userId, AgentType.TRAINER);
+    const [context, profile] = await Promise.all([
+      this.buildContext(userId, AgentType.TRAINER),
+      this.prisma.userProfile.findUnique({ where: { userId } }),
+    ]);
+    const safetyBlock = this.buildSafetyBlock(profile);
 
     // Preferences are a free-form note from the user ("treino longo: 5 peito +
     // 3 tríceps", "foco em panturrilha"). We wrap them in a clearly-fenced
@@ -419,7 +470,7 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
           { role: 'system', content: WORKOUT_GENERATION_PROMPT },
           {
             role: 'user',
-            content: `${context}${prefsBlock}\n\nCrie um plano de treino semanal completo e personalizado para este usuário. Responda APENAS com o JSON.`,
+            content: `${context}${prefsBlock}${safetyBlock}\n\nCrie um plano de treino semanal completo e personalizado para este usuário. Respeite as RESTRIÇÕES OBRIGATÓRIAS (lesões/equipamento) se houver. Responda APENAS com o JSON.`,
           },
         ],
         // Bumped from 4096 — a 6-day split with 6+ exercises per session
@@ -454,12 +505,14 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
     console.log(
       `[generateWorkoutPlanTwoPass] start userId=${userId} model=${GEN_MODEL} hasPrefs=${!!preferences?.trim()} hasPeriod=${!!periodizationDirective?.trim()}`,
     );
-    const [context, history] = await Promise.all([
+    const [context, history, profile] = await Promise.all([
       this.buildContext(userId, AgentType.TRAINER),
       this.buildTrainingHistory(userId),
+      this.prisma.userProfile.findUnique({ where: { userId } }),
     ]);
+    const safetyBlock = this.buildSafetyBlock(profile);
     console.log(
-      `[generateWorkoutPlanTwoPass] history loaded: ${history ? 'yes' : 'none (new user)'}`,
+      `[generateWorkoutPlanTwoPass] history loaded: ${history ? 'yes' : 'none (new user)'} safety=${safetyBlock ? 'yes' : 'none'}`,
     );
 
     const prefsBlock = preferences?.trim()
@@ -479,7 +532,7 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
           { role: 'system', content: WORKOUT_SKELETON_PROMPT },
           {
             role: 'user',
-            content: `${context}${prefsBlock}${periodBlock}\n\nGere APENAS o esqueleto do plano semanal com targetExercises por grupo. Se houver diretiva de PERIODIZAÇÃO acima (ex: deload), ajuste o volume (targetExercises) de acordo. Responda APENAS com JSON.`,
+            content: `${context}${prefsBlock}${periodBlock}${safetyBlock}\n\nGere APENAS o esqueleto do plano semanal com targetExercises por grupo. Se houver diretiva de PERIODIZAÇÃO acima (ex: deload), ajuste o volume (targetExercises) de acordo. Respeite as RESTRIÇÕES OBRIGATÓRIAS (lesões/equipamento) se houver. Responda APENAS com JSON.`,
           },
         ],
         max_tokens: 2048,
@@ -536,7 +589,7 @@ dayOfWeek: 0=Dom 1=Seg 2=Ter 3=Qua 4=Qui 5=Sex 6=Sáb`,
               { role: 'system', content: WORKOUT_SESSION_EXPANSION_PROMPT },
               {
                 role: 'user',
-                content: `BLUEPRINT:\n${JSON.stringify(blueprint, null, 2)}\n${history ? `\n${history}\n` : ''}${periodBlock}\nGere EXATAMENTE ${totalTargets} exercícios respeitando os targetExercises por grupo. Para exercícios que aparecem no HISTÓRICO DE CARGAS, aplique a regra de progressão e indique a carga sugerida em "notes". Se houver diretiva de PERIODIZAÇÃO acima, ajuste séries/RPE/carga conforme a fase (no deload, reduza séries e use cargas leves). Responda APENAS com JSON.`,
+                content: `BLUEPRINT:\n${JSON.stringify(blueprint, null, 2)}\n${history ? `\n${history}\n` : ''}${periodBlock}${safetyBlock}\nGere EXATAMENTE ${totalTargets} exercícios respeitando os targetExercises por grupo. Se houver RESTRIÇÕES OBRIGATÓRIAS acima (lesões/equipamento), elas têm prioridade sobre tudo: escolha apenas variações seguras e executáveis com o equipamento disponível. Para exercícios que aparecem no HISTÓRICO DE CARGAS, aplique a regra de progressão e indique a carga sugerida em "notes". Se houver diretiva de PERIODIZAÇÃO acima, ajuste séries/RPE/carga conforme a fase (no deload, reduza séries e use cargas leves). Responda APENAS com JSON.`,
               },
             ],
             max_tokens: 2048,

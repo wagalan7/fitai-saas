@@ -42,6 +42,14 @@ RESPEITO ÀS PREFERÊNCIAS DO USUÁRIO (CRÍTICO):
 - Se o pedido for incompatível com o split semanal (ex: "5 dias de peito"),
   faça o mais próximo possível e mantenha coerência fisiológica.
 
+SEGURANÇA E EQUIPAMENTO (CRÍTICO — acima de tudo, inclusive das preferências):
+- Se o contexto trouxer um bloco "RESTRIÇÕES OBRIGATÓRIAS" com LESÕES/LIMITAÇÕES,
+  trate como contraindicação ABSOLUTA. NUNCA prescreva exercício que sobrecarregue
+  a região lesionada — escolha variação segura e explique a adaptação em "notes".
+- Se houver EQUIPAMENTO DISPONÍVEL listado, use SOMENTE exercícios executáveis com
+  esse equipamento. Treino em casa (peso corporal/halteres/elásticos) NÃO pode ter
+  máquina, polia ou barra que o aluno não possui.
+
 Responda APENAS com JSON válido, sem markdown, sem texto adicional:
 {
   "name": "Nome do plano",
@@ -106,6 +114,13 @@ REGRA DE CARDIO (CRÍTICO):
 - Exercícios válidos de cardio: Corrida, Caminhada, Ciclismo, Natação, Esteira, Bike Ergométrica, Elíptico, Pular Corda, HIIT.
 - Abdômen (ABS, Abdominal, Prancha, Crunch) NÃO é cardio. Se for dia de cardio, NÃO inclua abdômen. Se quiser abdômen, crie sessão própria com muscleGroups=["abdômen"].
 
+SEGURANÇA E EQUIPAMENTO (CRÍTICO — prioridade sobre volume e preferências):
+- Se o contexto trouxer "RESTRIÇÕES OBRIGATÓRIAS" com LESÕES/LIMITAÇÕES, evite no esqueleto
+  qualquer grupo/sessão que force a região lesionada de forma incompatível com a limitação
+  (a substituição fina do exercício vem no passo seguinte, mas não monte um dia inviável).
+- Se houver EQUIPAMENTO DISPONÍVEL limitado (treino em casa), mantenha o split realista
+  para o que dá pra fazer com esse equipamento.
+
 Responda APENAS com JSON válido, sem markdown:
 {
   "name": "Nome do plano",
@@ -150,6 +165,24 @@ CONTAGEM (obrigatório):
 - Distribua de exercícios compostos (no início) pra isolados (no final)
 - order começa em 1 e segue sequencial
 
+RESTRIÇÕES DE SEGURANÇA E EQUIPAMENTO (CRÍTICA — vem ANTES de qualquer outra regra):
+- Se houver um bloco "RESTRIÇÕES OBRIGATÓRIAS" com LESÕES/LIMITAÇÕES, trate como
+  contraindicação ABSOLUTA. NUNCA escolha um exercício que sobrecarregue a região
+  lesionada — troque por uma variação segura do MESMO grupo muscular e explique em
+  "notes" o motivo da escolha (ex: "Leg Press no lugar de Agachamento Livre para
+  poupar a lombar"). Exemplos de adaptação:
+  • Lombar/coluna → evite Levantamento Terra, Agachamento Livre pesado, Stiff, Remada Curvada pesada; prefira Leg Press, máquinas com apoio de tronco, Cadeira Extensora/Flexora, Puxada.
+  • Joelho → evite Agachamento profundo e Afundo com carga alta; prefira Leg Press parcial, Cadeira Extensora leve, Mesa Flexora.
+  • Ombro → evite Desenvolvimento atrás da nuca, Supino Declinado pesado, Elevação Lateral pesada; prefira halteres em amplitude confortável, Face Pull, Crucifixo na máquina.
+  • Punho/cotovelo → evite Rosca Direta com barra reta e Tríceps Testa; prefira barra W, halteres neutros, polia.
+- Se houver EQUIPAMENTO DISPONÍVEL listado, escolha SOMENTE exercícios executáveis
+  com esse equipamento. Treino em casa só com peso corporal/halteres/elásticos NÃO
+  pode conter máquina, polia (Pulley, Crossover, Puxada) ou barra olímpica — use
+  Flexão, Agachamento Livre/Búlgaro, Afundo, Stiff com halteres, Rosca/Tríceps com
+  halteres ou elástico, Remada Curvada com halteres, etc.
+- Na dúvida entre cumprir a contagem do BLUEPRINT e respeitar a lesão/equipamento,
+  a SEGURANÇA vence: mantenha a contagem usando apenas variações seguras e viáveis.
+
 RESTRIÇÃO DE GRUPO (CRÍTICA):
 - Use SOMENTE exercícios dos grupos listados em targetExercises do BLUEPRINT
 - Se targetExercises = {"perna": 6}, gere SÓ exercícios de perna. NÃO inclua
@@ -193,6 +226,18 @@ IMPORTANTE — adapte o plano ao sexo biológico do usuário:
 - Masculino: maior ingestão calórica e proteica, foco em recuperação muscular e testosterona (zinco, gorduras saudáveis), refeições maiores.
 - Feminino: atenção ao ferro (fontes heme e não-heme), ácido fólico, cálcio. Controle calórico mais cuidadoso, refeições menores e mais frequentes. Considere variações hormonais (preferir carboidratos complexos).
 - Outro/não informado: plano equilibrado e saudável.
+
+RESTRIÇÕES ALIMENTARES (CRÍTICO — segurança, prioridade sobre tudo):
+- O bloco "PERFIL DO USUÁRIO" traz "Restrições alimentares" e "Preferências alimentares".
+- Restrições são ABSOLUTAS: NUNCA inclua um alimento proibido, nem como "alternatives".
+  • Vegetariano → sem carne, frango, peixe (ovo/laticínio ok salvo dito o contrário).
+  • Vegano → sem nenhum produto animal (carne, peixe, ovo, leite, mel, whey comum).
+  • Sem lactose → sem leite/queijo/iogurte comuns; use versões zero lactose ou vegetais.
+  • Sem glúten → sem trigo, pão/macarrão comum, aveia não certificada; use arroz, tapioca, batata.
+  • Alergias (amendoim, frutos do mar, etc.) → JAMAIS inclua o alimento nem traços.
+- Preferências alimentares devem ser priorizadas quando possível, sem violar a META.
+- Se uma restrição reduz fontes de proteína, compense com alternativas equivalentes
+  (ex: vegano → leguminosas, tofu, proteína de ervilha/soja, seitan).
 
 META NUTRICIONAL CALCULADA (CRÍTICO):
 - Se o contexto trouxer um bloco "META NUTRICIONAL (CALCULADA)" com calorias e macros, ele tem PRIORIDADE MÁXIMA. Distribua as refeições para que a SOMA dos macros bata nesses totais (tolerância ±5%).
