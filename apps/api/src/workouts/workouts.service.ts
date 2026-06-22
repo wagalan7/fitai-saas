@@ -4,6 +4,8 @@ import { PrismaService } from '../common/prisma.service';
 import { AgentsService } from '../agents/agents.service';
 import { resolveExerciseVideo } from './exercise-library';
 import { getPeriodization, clampCycleWeeks } from './periodization';
+import { buildWarmup } from './warmup';
+import { analyzeReadiness } from './readiness';
 
 // In-memory dedup: userId+hash → in-flight or recently-completed result.
 // 60s TTL is enough to catch double-clicks, auto-save races, and network retries.
@@ -178,14 +180,20 @@ export class WorkoutsService {
     return this.withPeriodization(newPlan);
   }
 
-  /** Attaches the computed periodization phase so the UI can show it without
-   *  duplicating the engine logic on the client. */
+  /** Attaches the computed periodization phase plus a per-session warm-up so the
+   *  UI can show both without duplicating engine logic on the client. The
+   *  warm-up is computed (not persisted) from each session's muscle groups. */
   private withPeriodization<T extends { currentWeek?: number; cycleWeeks?: number } | null>(
     plan: T,
   ): T {
     if (!plan) return plan;
+    const sessions = (plan as any).sessions;
+    const withWarmups = Array.isArray(sessions)
+      ? sessions.map((s: any) => ({ ...s, warmup: buildWarmup(s?.muscleGroups) }))
+      : sessions;
     return {
       ...plan,
+      ...(withWarmups ? { sessions: withWarmups } : {}),
       periodization: getPeriodization(
         (plan as any).currentWeek ?? 1,
         (plan as any).cycleWeeks ?? 4,
@@ -269,6 +277,80 @@ export class WorkoutsService {
     return this.replacePlan(userId, planData, 'advance-week', {
       cycleWeeks: cycle,
       currentWeek: next,
+      rawPrompt: active.rawPrompt,
+    });
+  }
+
+  /**
+   * Autoregulated-deload readiness: reads the user's logged RPE + session
+   * ratings over the last ~10 days and turns them into a recommendation. Used
+   * to surface an "antecipe um deload" banner when fatigue has outrun the plan.
+   */
+  async getReadiness(userId: string) {
+    const since = new Date(Date.now() - 10 * 86_400_000);
+    const [active, logs] = await Promise.all([
+      this.prisma.workoutPlan.findFirst({
+        where: { userId, isActive: true },
+        orderBy: { createdAt: 'desc' },
+        select: { currentWeek: true, cycleWeeks: true },
+      }),
+      this.prisma.workoutLog.findMany({
+        where: { userId, completedAt: { gte: since } },
+        select: {
+          rating: true,
+          exerciseLogs: { select: { sets: { select: { rpe: true } } } },
+        },
+      }),
+    ]);
+
+    const rpes: number[] = [];
+    const ratings: number[] = [];
+    for (const log of logs) {
+      if (typeof log.rating === 'number') ratings.push(log.rating);
+      for (const el of log.exerciseLogs) {
+        for (const s of el.sets) {
+          if (typeof s.rpe === 'number') rpes.push(s.rpe);
+        }
+      }
+    }
+
+    const period = active
+      ? getPeriodization(active.currentWeek ?? 1, active.cycleWeeks ?? 4)
+      : null;
+
+    return analyzeReadiness({
+      rpes,
+      ratings,
+      sessionsAnalyzed: logs.length,
+      alreadyDeloading: period?.isDeload ?? false,
+    });
+  }
+
+  /**
+   * Applies an autoregulated deload NOW: regenerates the active plan with the
+   * deload directive and moves the cycle position to its deload week, so the
+   * UI reflects the deload and a later advanceWeek() rolls into a fresh cycle.
+   */
+  async applyDeload(userId: string) {
+    const active = await this.prisma.workoutPlan.findFirst({
+      where: { userId, isActive: true },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!active) {
+      throw new NotFoundException('Nenhum plano ativo para aplicar o deload. Gere um treino primeiro.');
+    }
+
+    const cycle = clampCycleWeeks(active.cycleWeeks ?? 4);
+    // The last week of any cycle is the programmed deload; jump there.
+    const deloadWeek = cycle > 1 ? cycle : 1;
+    const period = getPeriodization(deloadWeek, cycle);
+    const preferences = active.rawPrompt ?? undefined;
+    console.log(`[applyDeload] userId=${userId} -> week ${deloadWeek}/${cycle} (autorregulado)`);
+
+    const planData = await this.generatePlanData(userId, preferences, period.directive);
+    return this.replacePlan(userId, planData, 'deload-autoregulated', {
+      cycleWeeks: cycle,
+      currentWeek: deloadWeek,
       rawPrompt: active.rawPrompt,
     });
   }

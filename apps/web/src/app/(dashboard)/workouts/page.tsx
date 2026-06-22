@@ -7,7 +7,7 @@ import axios from 'axios';
 import { api, apiDirectBase, getStoredToken } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import { onPlanUpdated } from '@/lib/events';
-import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play, CheckCircle, Star, Trash2 } from 'lucide-react';
+import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play, CheckCircle, Star, Trash2, Flame } from 'lucide-react';
 
 const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -60,9 +60,11 @@ export default function WorkoutsPage() {
   });
 
   const { data: todayLogs } = useSWR<Record<string, string>>('/workouts/today-logs', swrConfig);
+  const { data: readiness, mutate: mutateReadiness } = useSWR<any>('/workouts/readiness', swrConfig);
 
   const [generating, setGenerating] = useState(false);
   const [advancing, setAdvancing] = useState(false);
+  const [deloading, setDeloading] = useState(false);
   const [generateError, setGenerateError] = useState<string | null>(null);
   // Free-form prefs threaded into the backend prompt at generation time.
   // The trainer prompt has a "PRIORIDADE MÁXIMA" rule for this block.
@@ -155,6 +157,8 @@ export default function WorkoutsPage() {
       setLogOverrides((prev) => ({ ...prev, [sessionId]: data.id }));
       // Revalidate today-logs so the next session navigation matches server truth.
       mutate('/workouts/today-logs');
+      // New RPE/rating may shift the autoregulated-deload signal.
+      mutate('/workouts/readiness');
     } catch (err: any) {
       // Revert optimistic state.
       setLogOverrides((prev) => {
@@ -241,6 +245,31 @@ export default function WorkoutsPage() {
     }
   }
 
+  // Applies an autoregulated deload now — regenerates at the deload week.
+  // Long-running like generate, so it bypasses the Next.js proxy.
+  async function applyDeload() {
+    setDeloading(true);
+    setGenerateError(null);
+    try {
+      const token = getStoredToken();
+      const { data } = await axios.post(`${apiDirectBase}/workouts/deload`, {}, {
+        timeout: 180_000,
+        withCredentials: true,
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      mutatePlan(data, { revalidate: false });
+      savePlanToCache(data);
+      mutateReadiness();
+      toast.success('Deload aplicado — semana de recuperação gerada!');
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || 'Erro ao aplicar deload. Tente novamente.';
+      setGenerateError(msg);
+      toast.error(msg);
+    } finally {
+      setDeloading(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="space-y-4 animate-pulse">
@@ -321,6 +350,37 @@ export default function WorkoutsPage() {
       {generateError && (
         <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
           {generateError}
+        </div>
+      )}
+
+      {/* Autoregulated-deload banner — only when fatigue signals warrant it. */}
+      {plan && readiness && (readiness.status === 'deload' || readiness.status === 'caution') && (
+        <div
+          className={`rounded-xl px-4 py-3 text-sm border flex flex-col sm:flex-row sm:items-center gap-3 ${
+            readiness.status === 'deload'
+              ? 'bg-amber-50 border-amber-200 text-amber-800'
+              : 'bg-blue-50 border-blue-200 text-blue-800'
+          }`}
+        >
+          <div className="flex-1">
+            <p className="font-semibold flex items-center gap-1.5">
+              {readiness.status === 'deload' ? '🔴 Deload recomendado' : '🟡 Atenção à fadiga'}
+              {readiness.avgRpe != null && (
+                <span className="text-xs font-normal opacity-70">RPE médio {readiness.avgRpe}</span>
+              )}
+            </p>
+            <p className="text-xs mt-0.5 opacity-90">{readiness.reason}</p>
+          </div>
+          {readiness.recommendDeload && (
+            <button
+              onClick={applyDeload}
+              disabled={deloading || generating || advancing}
+              className="flex-shrink-0 inline-flex items-center justify-center gap-2 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white px-4 py-2 rounded-xl text-sm font-medium transition-colors"
+            >
+              <RefreshCw size={14} className={deloading ? 'animate-spin' : ''} />
+              {deloading ? 'Aplicando...' : 'Aplicar deload agora'}
+            </button>
+          )}
         </div>
       )}
 
@@ -535,6 +595,48 @@ export default function WorkoutsPage() {
                             Confirmar treino
                           </button>
                         </div>
+                      </div>
+                    )}
+
+                    {/* Aquecimento & mobilidade — computado por grupo muscular */}
+                    {session.warmup && (session.warmup.specific?.length > 0 || session.warmup.general?.length > 0) && (
+                      <div className="mb-4 p-4 bg-orange-50 border border-orange-100 rounded-xl">
+                        <div className="flex items-center gap-2 mb-2">
+                          <Flame size={16} className="text-orange-500" />
+                          <p className="text-sm font-semibold text-orange-800">
+                            Aquecimento & mobilidade
+                          </p>
+                          <span className="text-xs text-orange-600">~{session.warmup.durationMinutes} min</span>
+                        </div>
+                        {session.warmup.general?.length > 0 && (
+                          <div className="mb-2">
+                            <p className="text-[11px] uppercase tracking-wide text-orange-400 font-semibold mb-1">Geral</p>
+                            <ul className="space-y-0.5">
+                              {session.warmup.general.map((d: any, i: number) => (
+                                <li key={`g${i}`} className="text-xs text-gray-700 flex justify-between gap-3">
+                                  <span>{d.name}</span>
+                                  <span className="text-gray-400 flex-shrink-0">{d.prescription}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {session.warmup.specific?.length > 0 && (
+                          <div className="mb-2">
+                            <p className="text-[11px] uppercase tracking-wide text-orange-400 font-semibold mb-1">Específico</p>
+                            <ul className="space-y-0.5">
+                              {session.warmup.specific.map((d: any, i: number) => (
+                                <li key={`s${i}`} className="text-xs text-gray-700 flex justify-between gap-3">
+                                  <span>{d.name}</span>
+                                  <span className="text-gray-400 flex-shrink-0">{d.prescription}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {session.warmup.rampNote && (
+                          <p className="text-[11px] text-orange-700/80 mt-1 italic">{session.warmup.rampNote}</p>
+                        )}
                       </div>
                     )}
 

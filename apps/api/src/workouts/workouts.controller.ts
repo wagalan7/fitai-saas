@@ -29,6 +29,21 @@ export class WorkoutsController {
     return this.workoutsService.advanceWeek(req.user.id);
   }
 
+  // Autoregulated deload: reads recent logged RPE + ratings and recommends
+  // whether to deload now. Cheap read — no generation — so no extra throttle.
+  @Get('readiness')
+  getReadiness(@Req() req: { user: { id: string } }) {
+    return this.workoutsService.getReadiness(req.user.id);
+  }
+
+  // Applies an autoregulated deload immediately (regenerates at the deload
+  // week). Same long-running generation cost, so it shares the throttle budget.
+  @Throttle({ default: { limit: 5, ttl: 3600000 } })
+  @Post('deload')
+  applyDeload(@Req() req: { user: { id: string } }) {
+    return this.workoutsService.applyDeload(req.user.id);
+  }
+
   @Throttle({ default: { limit: 5, ttl: 3600000 } })
   @Post('save-from-chat')
   savePlanFromChat(
