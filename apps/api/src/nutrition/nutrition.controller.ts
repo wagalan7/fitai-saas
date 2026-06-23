@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, Query, UseGuards, Req } from '@nestjs/comm
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { NutritionService } from './nutrition.service';
-import { LogMealDto, SavePlanFromChatDto } from './nutrition.dto';
+import { AdjustDietDto, LogMealDto, SavePlanFromChatDto } from './nutrition.dto';
 
 @Controller('nutrition')
 @UseGuards(JwtAuthGuard, ThrottlerGuard)
@@ -37,6 +37,22 @@ export class NutritionController {
   @Get('today-adherence')
   getTodayAdherence(@Req() req: { user: { id: string } }) {
     return this.nutritionService.getTodayAdherence(req.user.id);
+  }
+
+  // Diet auto-titration: recommendation based on the weight trend vs the goal.
+  @Get('diet-adjustment')
+  getDietAdjustment(@Req() req: { user: { id: string } }) {
+    return this.nutritionService.getDietAdjustment(req.user.id);
+  }
+
+  // Applies a calorie titration (recommended delta, or an explicit override).
+  @Throttle({ default: { limit: 20, ttl: 3600000 } })
+  @Post('adjust')
+  adjustDiet(
+    @Req() req: { user: { id: string } },
+    @Body() body: AdjustDietDto = {},
+  ) {
+    return this.nutritionService.applyDietAdjustment(req.user.id, body.deltaKcal);
   }
 
   @Get('log')

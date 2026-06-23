@@ -8,6 +8,7 @@ import { toast } from '@/lib/toast';
 import { onPlanUpdated } from '@/lib/events';
 import { Salad, RefreshCw, ChevronDown, ChevronUp, CheckCircle } from 'lucide-react';
 import DailyAdherenceCard from '@/components/dashboard/DailyAdherenceCard';
+import DietAdjustmentCard from '@/components/dashboard/DietAdjustmentCard';
 
 export default function NutritionPage() {
   // SWR-backed plan: instant render from cache on revisit, background revalidate.
@@ -132,6 +133,9 @@ export default function NutritionPage() {
         <>
           {/* Today's adherence (traffic light) */}
           <DailyAdherenceCard />
+
+          {/* Diet auto-titration by weight trend */}
+          <DietAdjustmentCard />
 
           {/* Macro summary */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

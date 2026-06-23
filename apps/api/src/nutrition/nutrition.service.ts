@@ -2,6 +2,11 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { AgentsService } from '../agents/agents.service';
+import {
+  computeTitration,
+  retargetMacros,
+  type FitnessGoal,
+} from './diet-titration';
 
 const saveDedupCache = new Map<string, { result: Promise<any>; ts: number }>();
 const DEDUP_TTL_MS = 60_000;
@@ -242,6 +247,91 @@ export class NutritionService {
         fatG: ceilStatus(consumed.fatG, plan.fatG),
       },
     };
+  }
+
+  /**
+   * Diet auto-titration: reads the active plan, the user's goal, and ~21 days
+   * of logged body weight, and returns a calorie-adjustment recommendation
+   * (drop/raise/hold) based on whether the weight trend matches the goal band.
+   * Returns { hasPlan: false } when there's no active plan to adjust.
+   */
+  async getDietAdjustment(userId: string) {
+    const [plan, profile, weights] = await Promise.all([
+      this.prisma.nutritionPlan.findFirst({
+        where: { userId, isActive: true },
+        select: { calories: true, proteinG: true, carbsG: true, fatG: true },
+      }),
+      this.prisma.userProfile.findUnique({
+        where: { userId },
+        select: { fitnessGoal: true },
+      }),
+      this.prisma.progressLog.findMany({
+        where: {
+          userId,
+          weightKg: { not: null },
+          loggedAt: { gte: new Date(Date.now() - 21 * 86_400_000) },
+        },
+        select: { weightKg: true, loggedAt: true },
+        orderBy: { loggedAt: 'asc' },
+      }),
+    ]);
+
+    if (!plan) return { hasPlan: false as const };
+
+    const titration = computeTitration({
+      goal: (profile?.fitnessGoal as FitnessGoal) ?? 'GENERAL_FITNESS',
+      currentCalories: plan.calories,
+      weights: weights.map((w) => ({ weightKg: w.weightKg as number, loggedAt: w.loggedAt })),
+    });
+
+    return {
+      hasPlan: true as const,
+      currentCalories: plan.calories,
+      goal: (profile?.fitnessGoal as FitnessGoal) ?? 'GENERAL_FITNESS',
+      ...titration,
+    };
+  }
+
+  /**
+   * Applies a calorie titration to the active plan. Uses the recommended delta
+   * unless an explicit one is passed (clamped to ±300 kcal, never below a safe
+   * floor). Keeps protein fixed; carbs + fat absorb the change. Only the plan
+   * targets are updated — the meals stay as a reference until regenerated.
+   */
+  async applyDietAdjustment(userId: string, deltaKcal?: number) {
+    const plan = await this.prisma.nutritionPlan.findFirst({
+      where: { userId, isActive: true },
+      select: { id: true, calories: true, proteinG: true, carbsG: true, fatG: true },
+    });
+    if (!plan) {
+      throw new BadRequestException('Nenhum plano alimentar ativo para ajustar. Gere um plano primeiro.');
+    }
+
+    let delta: number;
+    if (typeof deltaKcal === 'number' && Number.isFinite(deltaKcal)) {
+      delta = Math.max(-300, Math.min(300, Math.round(deltaKcal)));
+    } else {
+      const rec = await this.getDietAdjustment(userId);
+      delta = 'recommendDeltaKcal' in rec ? rec.recommendDeltaKcal : 0;
+    }
+
+    if (!delta) {
+      throw new BadRequestException('Sem ajuste a aplicar: a tendência de peso está dentro do alvo.');
+    }
+
+    const newCalories = Math.max(1200, plan.calories + delta);
+    const macros = retargetMacros(plan, newCalories);
+
+    return this.prisma.nutritionPlan.update({
+      where: { id: plan.id },
+      data: {
+        calories: macros.calories,
+        proteinG: macros.proteinG,
+        carbsG: macros.carbsG,
+        fatG: macros.fatG,
+      },
+      include: { meals: { include: { foods: true } } },
+    });
   }
 
   /** YYYY-MM-DD for a moment in the given IANA timezone. */
