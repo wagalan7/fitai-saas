@@ -17,7 +17,10 @@ if (process.env.SENTRY_DSN) {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: true preserves the unparsed request buffer (req.rawBody) so the
+  // Stripe webhook can verify the signature against the exact bytes Stripe
+  // signed. The global JSON body parser still runs for every other route.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   app.use(cookieParser());
 
