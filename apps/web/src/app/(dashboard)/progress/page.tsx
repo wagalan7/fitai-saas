@@ -2,16 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
-import { Plus, TrendingUp } from 'lucide-react';
+import { Plus, TrendingUp, FileDown } from 'lucide-react';
 import ProgressChart from '@/components/dashboard/ProgressChart';
 import WeeklyCheckinCard from '@/components/dashboard/WeeklyCheckinCard';
 import ProgressPhotos from '@/components/dashboard/ProgressPhotos';
+import { printProgressReport } from '@/lib/report';
+import { useAuthStore } from '@/store/auth.store';
+import { toast } from '@/lib/toast';
 
 export default function ProgressPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [summary, setSummary] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [reporting, setReporting] = useState(false);
+  const user = useAuthStore((s) => s.user);
   const [form, setForm] = useState({
     weightKg: '',
     waistCm: '',
@@ -48,6 +53,29 @@ export default function ProgressPage() {
     setForm({ weightKg: '', waistCm: '', hipCm: '', armCm: '', legCm: '', notes: '' });
   }
 
+  async function downloadReport() {
+    setReporting(true);
+    try {
+      // Pull the workout history + active plan fresh so the report is complete;
+      // logs/summary are already in state.
+      const [historyRes, planRes] = await Promise.allSettled([
+        api.get('/workouts/history'),
+        api.get('/workouts/plan'),
+      ]);
+      printProgressReport({
+        userName: user?.name,
+        summary,
+        logs,
+        plan: planRes.status === 'fulfilled' ? planRes.value.data : null,
+        recentWorkouts: historyRes.status === 'fulfilled' ? historyRes.value.data : [],
+      });
+    } catch {
+      toast.error('Não foi possível gerar o relatório.');
+    } finally {
+      setReporting(false);
+    }
+  }
+
   if (loading) return <div className="flex items-center justify-center h-64"><div className="animate-spin w-8 h-8 border-2 border-primary-500 border-t-transparent rounded-full" /></div>;
 
   return (
@@ -57,12 +85,22 @@ export default function ProgressPage() {
           <h1 className="text-2xl font-bold text-gray-900">Meu Progresso</h1>
           <p className="text-gray-500">Acompanhe sua evolução</p>
         </div>
-        <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 bg-primary-500 hover:bg-primary-600 text-white px-4 py-2.5 rounded-xl font-medium"
-        >
-          <Plus size={16} /> Registrar
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={downloadReport}
+            disabled={reporting}
+            className="flex items-center gap-2 border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-60 px-4 py-2.5 rounded-xl font-medium"
+            title="Gerar relatório em PDF do seu progresso"
+          >
+            <FileDown size={16} /> {reporting ? 'Gerando…' : 'Relatório PDF'}
+          </button>
+          <button
+            onClick={() => setShowForm(true)}
+            className="flex items-center gap-2 bg-primary-500 hover:bg-primary-600 text-white px-4 py-2.5 rounded-xl font-medium"
+          >
+            <Plus size={16} /> Registrar
+          </button>
+        </div>
       </div>
 
       {/* Summary cards */}
