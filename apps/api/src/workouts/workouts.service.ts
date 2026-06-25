@@ -6,6 +6,12 @@ import { resolveExerciseVideo } from './exercise-library';
 import { getPeriodization, clampCycleWeeks } from './periodization';
 import { buildWarmup } from './warmup';
 import { analyzeReadiness } from './readiness';
+import {
+  suggestProgression,
+  normalizeExerciseName,
+  type LoggedSet,
+  type ProgressionSuggestion,
+} from './progression';
 
 // In-memory dedup: userId+hash → in-flight or recently-completed result.
 // 60s TTL is enough to catch double-clicks, auto-save races, and network retries.
@@ -353,6 +359,60 @@ export class WorkoutsService {
       currentWeek: deloadWeek,
       rawPrompt: active.rawPrompt,
     });
+  }
+
+  /**
+   * Progressive-overload targets for the active plan. For every exercise we
+   * find the most recent time it was logged (matched by normalized name across
+   * any session) and run the double-progression engine, returning a map keyed
+   * by the plan's exercise name so the UI can show "última vez × meta de hoje"
+   * and pre-fill the log form with the next target.
+   */
+  async getProgression(
+    userId: string,
+  ): Promise<{ hasPlan: boolean; suggestions: Record<string, ProgressionSuggestion> }> {
+    const active = await this.prisma.workoutPlan.findFirst({
+      where: { userId, isActive: true },
+      orderBy: { createdAt: 'desc' },
+      include: this.activePlanInclude,
+    });
+    if (!active) return { hasPlan: false, suggestions: {} };
+
+    // 120 days is plenty to catch the last performance even on infrequent lifts.
+    const since = new Date(Date.now() - 120 * 86_400_000);
+    const logs = await this.prisma.workoutLog.findMany({
+      where: { userId, completedAt: { gte: since } },
+      orderBy: { completedAt: 'desc' },
+      include: { exerciseLogs: { include: { sets: { orderBy: { setNumber: 'asc' } } } } },
+    });
+
+    // First hit wins in descending order → most-recent logged sets per exercise.
+    const lastByExercise = new Map<string, LoggedSet[]>();
+    for (const log of logs) {
+      for (const el of log.exerciseLogs) {
+        const key = normalizeExerciseName(el.exerciseName);
+        if (!lastByExercise.has(key) && el.sets.length) {
+          lastByExercise.set(
+            key,
+            el.sets.map((s) => ({
+              reps: s.reps,
+              weightKg: s.weightKg,
+              durationSecs: s.durationSecs,
+              rpe: s.rpe,
+            })),
+          );
+        }
+      }
+    }
+
+    const suggestions: Record<string, ProgressionSuggestion> = {};
+    for (const session of active.sessions ?? []) {
+      for (const ex of (session as any).exercises ?? []) {
+        const lastSets = lastByExercise.get(normalizeExerciseName(ex.name)) ?? [];
+        suggestions[ex.name] = suggestProgression(ex.reps, lastSets);
+      }
+    }
+    return { hasPlan: true, suggestions };
   }
 
   async savePlanFromText(userId: string, text: string) {

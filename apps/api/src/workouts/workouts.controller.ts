@@ -58,6 +58,13 @@ export class WorkoutsController {
     return this.workoutsService.getActivePlan(req.user.id);
   }
 
+  // Progressive-overload targets per exercise (last performance → today's goal).
+  // Cheap read, no generation — shares the default throttle budget.
+  @Get('progression')
+  getProgression(@Req() req: { user: { id: string } }) {
+    return this.workoutsService.getProgression(req.user.id);
+  }
+
   @Post('log')
   logWorkout(@Req() req: { user: { id: string } }, @Body() body: LogWorkoutDto) {
     return this.workoutsService.logWorkout(req.user.id, body.workoutSessionId, body);

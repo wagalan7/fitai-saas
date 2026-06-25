@@ -7,7 +7,17 @@ import axios from 'axios';
 import { api, apiDirectBase, getStoredToken } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import { onPlanUpdated } from '@/lib/events';
-import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play, CheckCircle, Star, Trash2, Flame } from 'lucide-react';
+import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play, CheckCircle, Star, Trash2, Flame, TrendingUp } from 'lucide-react';
+
+interface ProgressionSuggestion {
+  hasHistory: boolean;
+  kind: string;
+  targetWeightKg?: number | null;
+  targetReps?: number | null;
+  targetDurationSecs?: number | null;
+  cue: string;
+  reason: string;
+}
 
 const DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
@@ -61,6 +71,11 @@ export default function WorkoutsPage() {
 
   const { data: todayLogs } = useSWR<Record<string, string>>('/workouts/today-logs', swrConfig);
   const { data: readiness, mutate: mutateReadiness } = useSWR<any>('/workouts/readiness', swrConfig);
+  const { data: progression } = useSWR<{ hasPlan: boolean; suggestions: Record<string, ProgressionSuggestion> }>(
+    '/workouts/progression',
+    swrConfig,
+  );
+  const suggestions = progression?.suggestions || {};
 
   const [generating, setGenerating] = useState(false);
   const [advancing, setAdvancing] = useState(false);
@@ -101,15 +116,26 @@ export default function WorkoutsPage() {
   function openLogForm(session: any) {
     setLoggingSessionId(loggingSessionId === session.id ? null : session.id);
     setLogForm({ duration: '', rating: 0, notes: '' });
-    // Pre-fill exercise logs from session plan
+    // Pre-fill exercise logs from the session plan. When we have a progressive-
+    // overload target for the exercise, seed reps/weight with it so the user
+    // opens the form already pointed at the next step (they can still edit).
     setExerciseLogs(
-      (session.exercises || []).map((ex: any) => ({
-        exerciseName: ex.name,
-        sets: Array.from({ length: Number(ex.sets) || 3 }, () => ({
-          reps: String(ex.reps).split('-')[0], // use lower bound as default
-          weightKg: '',
-        })),
-      }))
+      (session.exercises || []).map((ex: any) => {
+        const sug = suggestions[ex.name];
+        const defaultReps =
+          sug?.hasHistory && sug.targetReps != null
+            ? String(sug.targetReps)
+            : String(ex.reps).split('-')[0]; // fall back to the prescribed lower bound
+        const defaultWeight =
+          sug?.hasHistory && sug.targetWeightKg != null ? String(sug.targetWeightKg) : '';
+        return {
+          exerciseName: ex.name,
+          sets: Array.from({ length: Number(ex.sets) || 3 }, () => ({
+            reps: defaultReps,
+            weightKg: defaultWeight,
+          })),
+        };
+      })
     );
   }
 
@@ -159,6 +185,8 @@ export default function WorkoutsPage() {
       mutate('/workouts/today-logs');
       // New RPE/rating may shift the autoregulated-deload signal.
       mutate('/workouts/readiness');
+      // Fresh loads recompute the next progressive-overload target.
+      mutate('/workouts/progression');
     } catch (err: any) {
       // Revert optimistic state.
       setLogOverrides((prev) => {
@@ -674,6 +702,16 @@ export default function WorkoutsPage() {
                                 {ex.restSeconds}s descanso
                               </span>
                             </div>
+                            {/* Sobrecarga progressiva: meta de hoje a partir do último registro */}
+                            {suggestions[ex.name]?.hasHistory && (
+                              <div
+                                className="inline-flex items-center gap-1.5 mt-2 text-xs text-indigo-700 bg-indigo-50 border border-indigo-100 px-2.5 py-1 rounded-lg"
+                                title={suggestions[ex.name].reason}
+                              >
+                                <TrendingUp size={12} className="flex-shrink-0" />
+                                <span className="font-medium">{suggestions[ex.name].cue}</span>
+                              </div>
+                            )}
                             {ex.notes && (
                               <p className="text-xs text-gray-500 mt-2 italic">{ex.notes}</p>
                             )}
