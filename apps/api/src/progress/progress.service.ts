@@ -1,5 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+
+// The client is supposed to downscale to ~1080px JPEG before upload, which
+// lands well under this. We still cap server-side so a crafted request can't
+// stuff a multi-megabyte blob into a TEXT column. ~2MB of raw bytes ≈ 2.7MB of
+// base64 characters; allow a little headroom.
+const MAX_IMAGE_CHARS = 3_000_000;
 
 @Injectable()
 export class ProgressService {
@@ -57,6 +67,90 @@ export class ProgressService {
       totalWorkouts: workoutCount,
       totalMealsLogged: mealCount,
       latestMeasurements: latest,
+    };
+  }
+
+  // ─── Progress photos ───────────────────────────────────────────────────────
+
+  async addPhoto(
+    userId: string,
+    data: {
+      imageData?: string;
+      pose?: string;
+      weightKg?: number;
+      notes?: string;
+    },
+  ) {
+    const imageData = data.imageData?.trim();
+    if (!imageData || !imageData.startsWith('data:image/')) {
+      throw new BadRequestException('Imagem inválida.');
+    }
+    if (imageData.length > MAX_IMAGE_CHARS) {
+      throw new BadRequestException(
+        'Imagem muito grande. Reduza a resolução e tente novamente.',
+      );
+    }
+
+    const photo = await this.prisma.progressPhoto.create({
+      data: {
+        userId,
+        imageData,
+        pose: data.pose?.trim() || null,
+        weightKg: typeof data.weightKg === 'number' ? data.weightKg : null,
+        notes: data.notes?.trim() || null,
+      },
+    });
+    return this.toMeta(photo);
+  }
+
+  // List photo metadata WITHOUT the heavy base64 blob so the gallery index is
+  // cheap. The client fetches each image bytes separately via getPhoto().
+  async listPhotos(userId: string) {
+    const photos = await this.prisma.progressPhoto.findMany({
+      where: { userId },
+      orderBy: { takenAt: 'asc' },
+      select: {
+        id: true,
+        pose: true,
+        weightKg: true,
+        notes: true,
+        takenAt: true,
+      },
+    });
+    return photos;
+  }
+
+  async getPhoto(userId: string, id: string) {
+    const photo = await this.prisma.progressPhoto.findFirst({
+      where: { id, userId },
+    });
+    if (!photo) throw new NotFoundException('Foto não encontrada.');
+    return { id: photo.id, imageData: photo.imageData };
+  }
+
+  async deletePhoto(userId: string, id: string) {
+    const photo = await this.prisma.progressPhoto.findFirst({
+      where: { id, userId },
+      select: { id: true },
+    });
+    if (!photo) throw new NotFoundException('Foto não encontrada.');
+    await this.prisma.progressPhoto.delete({ where: { id } });
+    return { deleted: true };
+  }
+
+  private toMeta(photo: {
+    id: string;
+    pose: string | null;
+    weightKg: number | null;
+    notes: string | null;
+    takenAt: Date;
+  }) {
+    return {
+      id: photo.id,
+      pose: photo.pose,
+      weightKg: photo.weightKg,
+      notes: photo.notes,
+      takenAt: photo.takenAt,
     };
   }
 }

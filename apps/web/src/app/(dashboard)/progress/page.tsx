@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { Plus, TrendingUp } from 'lucide-react';
 import ProgressChart from '@/components/dashboard/ProgressChart';
 import WeeklyCheckinCard from '@/components/dashboard/WeeklyCheckinCard';
+import ProgressPhotos from '@/components/dashboard/ProgressPhotos';
 
 export default function ProgressPage() {
   const [logs, setLogs] = useState<any[]>([]);
@@ -90,6 +91,9 @@ export default function ProgressPage() {
 
       {/* Weekly check-in (ANALYST) */}
       <WeeklyCheckinCard />
+
+      {/* Progress photos timeline */}
+      <ProgressPhotos />
 
       {/* Chart */}
       {logs.length > 1 && (

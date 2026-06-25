@@ -31,6 +31,7 @@ model User {
   memories      Memory[]
   chatSessions  ChatSession[]
   progressLogs  ProgressLog[]
+  progressPhotos ProgressPhoto[]
   subscription  Subscription?
   pushSubscriptions PushSubscription[]
   deviceTokens      DeviceToken[]
@@ -437,6 +438,27 @@ model ProgressLog {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("progress_logs")
+}
+
+/// Progress photos for the body-recomposition timeline. We have no object
+/// storage (S3/Cloudinary) wired up, so the web client downscales the picture
+/// to ~1080px JPEG and we persist it as a base64 data URL. Kept in its own
+/// table (not ProgressLog.photoUrl) so a heavy TEXT blob never bloats the
+/// frequent measurement reads, and so a user can snap a photo independently of
+/// logging a full measurement set.
+model ProgressPhoto {
+  id        String   @id @default(cuid())
+  userId    String
+  imageData String   @db.Text   // base64 data URL (data:image/jpeg;base64,...)
+  pose      String?  // 'front' | 'side' | 'back' | free text
+  weightKg  Float?   // optional weight at the time, for the caption
+  notes     String?
+  takenAt   DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, takenAt])
+  @@map("progress_photos")
 }
 
 // ─── SUBSCRIPTION (SaaS) ──────────────────────────────────────────────────────
