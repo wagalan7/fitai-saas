@@ -122,6 +122,11 @@ model UserProfile {
   // evening local time. lastWeeklyCheckinAt is the dedup guard (once/week).
   weeklyCheckinEnabled    Boolean   @default(true)
   lastWeeklyCheckinAt     DateTime?
+  // Accountability nudges (RemindersService): "comeback" nags after a 4+ day
+  // training gap; "weigh-in" nags after 7+ days without a weight log (which
+  // also feeds the diet auto-titration loop). Each has its own dedup guard.
+  lastComebackNudgeAt     DateTime?
+  lastWeighInNudgeAt      DateTime?
   // Timestamp of the user's FIRST Dr Shape body evaluation. Set during
   // onboarding (or null if they skipped). The dashboard guard uses this to
   // decide whether to push the user into evaluation before showing the app.

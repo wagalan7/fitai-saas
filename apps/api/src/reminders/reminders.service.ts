@@ -113,6 +113,151 @@ export class RemindersService {
     await this.runStreakSavers(now).catch((err) =>
       this.logger.warn(`Streak saver pass failed: ${err?.message}`),
     );
+
+    // Accountability nudges share the same hourly tick + TZ math.
+    await this.runComebackNudges(now).catch((err) =>
+      this.logger.warn(`Comeback nudge pass failed: ${err?.message}`),
+    );
+    await this.runWeighInNudges(now).catch((err) =>
+      this.logger.warn(`Weigh-in nudge pass failed: ${err?.message}`),
+    );
+  }
+
+  /**
+   * COMEBACK NUDGE — at 17h local, gently re-engages users who have a plan but
+   * have gone quiet for 4+ days. Distinct from the streak saver (which only
+   * fires for an ACTIVE streak): this is for people who already fell off, so we
+   * cap the gap at 21 days to avoid nagging long-churned accounts forever.
+   * Dedup of 72h means at most every ~3 days.
+   */
+  private async runComebackNudges(now: Date) {
+    const NUDGE_HOUR = 17;
+    const MIN_GAP_DAYS = 4;
+    const MAX_GAP_DAYS = 21;
+
+    const profiles = await this.prisma.userProfile.findMany({
+      where: {
+        workoutRemindersEnabled: true,
+        user: { pushSubscriptions: { some: {} } },
+      },
+      select: { userId: true, timezone: true, lastComebackNudgeAt: true },
+    });
+
+    let sent = 0;
+    for (const p of profiles) {
+      try {
+        const local = this.getLocalDateParts(now, p.timezone);
+        if (local.hour !== NUDGE_HOUR) continue;
+
+        if (p.lastComebackNudgeAt) {
+          const ageHours = (now.getTime() - p.lastComebackNudgeAt.getTime()) / 3_600_000;
+          if (ageHours < 72) continue;
+        }
+
+        // Needs an active plan to "come back" to.
+        const plan = await this.prisma.workoutPlan.findFirst({
+          where: { userId: p.userId, isActive: true },
+          select: { id: true },
+        });
+        if (!plan) continue;
+
+        // Most recent workout log. A genuine comeback requires a prior log.
+        const lastLog = await this.prisma.workoutLog.findFirst({
+          where: { userId: p.userId },
+          orderBy: { completedAt: 'desc' },
+          select: { completedAt: true },
+        });
+        if (!lastLog) continue; // never trained → onboarding handles that, not us
+
+        const gapDays = Math.floor(
+          (now.getTime() - lastLog.completedAt.getTime()) / 86_400_000,
+        );
+        if (gapDays < MIN_GAP_DAYS || gapDays > MAX_GAP_DAYS) continue;
+
+        const result: any = await this.push.sendToUser(p.userId, {
+          title: 'Senti sua falta 👀',
+          body: `Faz ${gapDays} dias sem treino. Bora retomar hoje — 1 sessão já reacende o ritmo.`,
+          url: '/workouts',
+        });
+        if (result?.sent > 0) {
+          sent++;
+          await this.prisma.userProfile.update({
+            where: { userId: p.userId },
+            data: { lastComebackNudgeAt: now },
+          });
+        }
+      } catch (err: any) {
+        this.logger.warn(`Comeback nudge failed for user=${p.userId}: ${err?.message}`);
+      }
+    }
+    if (sent > 0) this.logger.log(`Comeback nudges dispatched: ${sent}`);
+  }
+
+  /**
+   * WEIGH-IN NUDGE — at 9h local (best time to weigh in), nags users who have
+   * not logged a body weight in 7+ days. Closes the diet auto-titration loop:
+   * the titration engine can only adjust calories when fresh weights exist.
+   * Dedup of ~6 days keeps it roughly weekly.
+   */
+  private async runWeighInNudges(now: Date) {
+    const NUDGE_HOUR = 9;
+    const STALE_DAYS = 7;
+
+    const profiles = await this.prisma.userProfile.findMany({
+      where: {
+        workoutRemindersEnabled: true,
+        user: { pushSubscriptions: { some: {} } },
+      },
+      select: { userId: true, timezone: true, lastWeighInNudgeAt: true },
+    });
+
+    let sent = 0;
+    for (const p of profiles) {
+      try {
+        const local = this.getLocalDateParts(now, p.timezone);
+        if (local.hour !== NUDGE_HOUR) continue;
+
+        if (p.lastWeighInNudgeAt) {
+          const ageHours = (now.getTime() - p.lastWeighInNudgeAt.getTime()) / 3_600_000;
+          if (ageHours < 6 * 24) continue;
+        }
+
+        // Last weight entry (a ProgressLog can be measurements-only, so require
+        // weightKg to be present).
+        const lastWeight = await this.prisma.progressLog.findFirst({
+          where: { userId: p.userId, weightKg: { not: null } },
+          orderBy: { loggedAt: 'desc' },
+          select: { loggedAt: true },
+        });
+
+        const gapDays = lastWeight
+          ? Math.floor((now.getTime() - lastWeight.loggedAt.getTime()) / 86_400_000)
+          : null;
+        // Nudge when stale (7+ days) or never logged a weight at all.
+        if (gapDays != null && gapDays < STALE_DAYS) continue;
+
+        const body =
+          gapDays == null
+            ? 'Registre seu peso pra ativar os ajustes automáticos da dieta. Leva 30s ⚖️'
+            : `Faz ${gapDays} dias sem pesar. 30s no registro mantêm sua dieta calibrada ⚖️`;
+
+        const result: any = await this.push.sendToUser(p.userId, {
+          title: 'Hora de pesar ⚖️',
+          body,
+          url: '/progress',
+        });
+        if (result?.sent > 0) {
+          sent++;
+          await this.prisma.userProfile.update({
+            where: { userId: p.userId },
+            data: { lastWeighInNudgeAt: now },
+          });
+        }
+      } catch (err: any) {
+        this.logger.warn(`Weigh-in nudge failed for user=${p.userId}: ${err?.message}`);
+      }
+    }
+    if (sent > 0) this.logger.log(`Weigh-in nudges dispatched: ${sent}`);
   }
 
   /**
