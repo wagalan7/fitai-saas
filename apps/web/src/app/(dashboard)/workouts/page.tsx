@@ -7,7 +7,7 @@ import axios from 'axios';
 import { api, apiDirectBase, getStoredToken } from '@/lib/api';
 import { toast } from '@/lib/toast';
 import { onPlanUpdated } from '@/lib/events';
-import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play, CheckCircle, Star, Trash2, Flame, TrendingUp } from 'lucide-react';
+import { Dumbbell, RefreshCw, Clock, ChevronDown, ChevronUp, Play, CheckCircle, Star, Trash2, Flame, TrendingUp, Lightbulb } from 'lucide-react';
 
 interface ProgressionSuggestion {
   hasHistory: boolean;
@@ -86,6 +86,7 @@ export default function WorkoutsPage() {
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [preferences, setPreferences] = useState('');
   const [expandedSession, setExpandedSession] = useState<string | null>(null);
+  const [rationaleOpen, setRationaleOpen] = useState(false);
   const [loggingSessionId, setLoggingSessionId] = useState<string | null>(null);
   const [logForm, setLogForm] = useState<{ duration: string; rating: number; notes: string }>({ duration: '', rating: 0, notes: '' });
   const [exerciseLogs, setExerciseLogs] = useState<Array<{ exerciseName: string; sets: Array<{ reps: string; weightKg: string }> }>>([]);
@@ -481,6 +482,39 @@ export default function WorkoutsPage() {
               </button>
             )}
           </div>
+
+          {/* Por que esse treino? — plan explicability */}
+          {plan.rationale && (
+            <div className="card overflow-hidden">
+              <button
+                onClick={() => setRationaleOpen((v) => !v)}
+                className="w-full flex items-center justify-between gap-3 p-4 text-left hover:bg-gray-50"
+              >
+                <span className="flex items-center gap-2 min-w-0">
+                  <Lightbulb size={18} className="text-amber-500 flex-shrink-0" />
+                  <span className="font-semibold text-gray-900">Por que esse treino?</span>
+                </span>
+                {rationaleOpen ? (
+                  <ChevronUp size={18} className="text-gray-400 flex-shrink-0" />
+                ) : (
+                  <ChevronDown size={18} className="text-gray-400 flex-shrink-0" />
+                )}
+              </button>
+              {rationaleOpen && (
+                <div className="px-4 pb-4 space-y-3">
+                  <p className="text-sm text-gray-600">{plan.rationale.summary}</p>
+                  <div className="space-y-2.5">
+                    {plan.rationale.points.map((pt: any) => (
+                      <div key={pt.key} className="bg-gray-50 rounded-xl p-3">
+                        <p className="text-sm font-semibold text-gray-800">{pt.title}</p>
+                        <p className="text-sm text-gray-500 mt-0.5">{pt.detail}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           <div className="space-y-3">
             {[...(plan.sessions || [])].sort((a: any, b: any) => a.dayOfWeek - b.dayOfWeek).map((session: any) => (

@@ -12,6 +12,7 @@ import {
   type LoggedSet,
   type ProgressionSuggestion,
 } from './progression';
+import { buildPlanRationale } from './plan-rationale';
 
 // In-memory dedup: userId+hash → in-flight or recently-completed result.
 // 60s TTL is enough to catch double-clicks, auto-save races, and network retries.
@@ -460,14 +461,40 @@ export class WorkoutsService {
   }
 
   async getActivePlan(userId: string) {
-    const plans = await this.prisma.workoutPlan.findMany({
-      where: { userId, isActive: true },
-      orderBy: { createdAt: 'desc' },
-      take: 1,
-      include: this.activePlanInclude,
-    });
+    const [plans, profile] = await Promise.all([
+      this.prisma.workoutPlan.findMany({
+        where: { userId, isActive: true },
+        orderBy: { createdAt: 'desc' },
+        take: 1,
+        include: this.activePlanInclude,
+      }),
+      this.prisma.userProfile.findUnique({ where: { userId } }),
+    ]);
     console.log(`[getActivePlan] userId=${userId} found=${plans.length} plan="${plans[0]?.name}"`);
-    return this.withPeriodization(plans[0] ?? null);
+    const plan = this.withPeriodization(plans[0] ?? null);
+    return this.withRationale(plan, profile);
+  }
+
+  /** Attaches a human "por que esse treino?" rationale derived from the user's
+   *  profile + the plan's structure + the live periodization phase. Computed
+   *  (not persisted) so it always reflects the current mesocycle week. */
+  private withRationale(plan: any, profile: any): any {
+    if (!plan) return plan;
+    const sessions: any[] = Array.isArray(plan.sessions) ? plan.sessions : [];
+    const muscleGroups = Array.from(
+      new Set(sessions.flatMap((s) => (Array.isArray(s?.muscleGroups) ? s.muscleGroups : []))),
+    );
+    const rationale = buildPlanRationale({
+      fitnessGoal: profile?.fitnessGoal,
+      fitnessLevel: profile?.fitnessLevel,
+      workoutsPerWeek: profile?.workoutsPerWeek,
+      workoutDuration: profile?.workoutDuration,
+      injuries: profile?.injuries,
+      sessionCount: sessions.length,
+      muscleGroups,
+      periodization: plan.periodization,
+    });
+    return { ...plan, rationale };
   }
 
   async logWorkout(
